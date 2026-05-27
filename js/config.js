@@ -117,12 +117,67 @@ async function guardarVeterinario(e) {
   const matricula = document.getElementById('vet-matricula').value.trim();
   const url       = document.getElementById('vet-url').value.trim();
 
+  const vetAnterior = await getVeterinario();
+  const urlCambio   = url && url !== (vetAnterior?.appsScriptUrl || '');
+
   await saveVeterinario({ id: 1, nombre, matricula, appsScriptUrl: url });
 
   const btn = e.target.querySelector('button[type="submit"]');
   btn.textContent = '✓ Guardado';
   btn.disabled = true;
   setTimeout(() => { btn.textContent = 'Guardar'; btn.disabled = false; }, 1500);
+
+  // Si el URL cambió y hay internet → buscar tambos en el script
+  if (urlCambio && navigator.onLine) {
+    await _buscarTambosEnScript(url);
+  }
+}
+
+async function _buscarTambosEnScript(url) {
+  _showToast('🔍 Buscando tambos en el script…', 'loading');
+  let data;
+  try {
+    const res = await fetch(`${url}?action=list`, { redirect: 'follow' });
+    data = await res.json();
+  } catch(err) {
+    _showToast('No se pudo conectar con el script.');
+    return;
+  }
+
+  const tambosRemote = data.tambos || [];
+  if (!tambosRemote.length) {
+    _showToast('El script no tiene tambos registrados todavía.');
+    return;
+  }
+
+  // Filtrar los que no existen localmente (por sheetId)
+  const tambosLocales = await getTambos();
+  const sheetIdsLocales = new Set(tambosLocales.map(t => t.sheetId).filter(Boolean));
+  const nuevos = tambosRemote.filter(t => !sheetIdsLocales.has(t.sheetId));
+
+  if (!nuevos.length) {
+    _showToast('✓ Todos los tambos ya están en el dispositivo.');
+    return;
+  }
+
+  const lista = nuevos.map(t => `• ${t.nombre} (${t.propietario})`).join('\n');
+  if (!confirm(
+    `Se encontraron ${nuevos.length} tambo${nuevos.length !== 1 ? 's' : ''} en el script:\n\n` +
+    `${lista}\n\n¿Importarlos a este dispositivo?`
+  )) return;
+
+  for (const t of nuevos) {
+    const tamboId = await saveTambo({
+      nombre:      t.nombre,
+      propietario: t.propietario,
+      telefono:    '',
+      sheetId:     t.sheetId,
+    });
+    await pullFromSheet(tamboId);
+  }
+
+  _showToast(`✓ ${nuevos.length} tambo${nuevos.length !== 1 ? 's' : ''} importado${nuevos.length !== 1 ? 's' : ''}`);
+  navigate('/config');
 }
 
 // ─── Forzar sync ──────────────────────────────────────────────────────────────

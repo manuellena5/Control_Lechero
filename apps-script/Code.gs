@@ -99,8 +99,9 @@ function doPost(e) {
     // Alinear números a la derecha
     hoja.getRange(FILA_HEADER + 1, 3, regs.length + 1, 3).setHorizontalAlignment('right');
 
-    // ── Actualizar hoja _datos ──────────────────────────────────────────────
+    // ── Actualizar hoja _datos y registro global ────────────────────────────
     _actualizarDatos(ss, data);
+    _registrarTambo(data.sheetId, data.control.tambo, data.control.propietario);
 
     return ContentService
       .createTextOutput(JSON.stringify({ ok: true }))
@@ -117,10 +118,24 @@ function doPost(e) {
 
 function doGet(e) {
   try {
+    // action=list → devuelve todos los tambos registrados en este script
+    if (e.parameter.action === 'list') {
+      const props = PropertiesService.getScriptProperties();
+      let registro = {};
+      try { registro = JSON.parse(props.getProperty('tambos') || '{}'); } catch(ex) {}
+      const tambos = Object.keys(registro).map(function(sheetId) {
+        return Object.assign({ sheetId: sheetId }, registro[sheetId]);
+      });
+      return ContentService
+        .createTextOutput(JSON.stringify({ tambos: tambos }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // sheetId → devuelve el historial completo del tambo
     const sheetId = e.parameter.sheetId;
     if (!sheetId) {
       return ContentService
-        .createTextOutput(JSON.stringify({ ok: false, error: 'Falta parámetro sheetId.' }))
+        .createTextOutput(JSON.stringify({ ok: false, error: 'Falta parámetro sheetId o action.' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -133,7 +148,7 @@ function doGet(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    const raw  = hojaDatos.getRange('A1').getValue();
+    const raw   = hojaDatos.getRange('A1').getValue();
     const datos = raw ? JSON.parse(raw) : { controles: [], padron: [] };
 
     return ContentService
@@ -144,6 +159,24 @@ function doGet(e) {
     return ContentService
       .createTextOutput(JSON.stringify({ ok: false, error: err.message }))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ─── _registrarTambo: guarda el tambo en las propiedades del script ──────────
+
+function _registrarTambo(sheetId, nombre, propietario) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let registro = {};
+    try { registro = JSON.parse(props.getProperty('tambos') || '{}'); } catch(ex) {}
+    registro[sheetId] = {
+      nombre:      nombre,
+      propietario: propietario,
+      updatedAt:   new Date().toISOString(),
+    };
+    props.setProperty('tambos', JSON.stringify(registro));
+  } catch(e) {
+    // No crítico — continuar aunque falle el registro
   }
 }
 

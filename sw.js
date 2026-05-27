@@ -1,6 +1,6 @@
 /* sw.js — Service Worker offline-first */
 
-const CACHE = 'control-lechero-v1';
+const CACHE = 'control-lechero-v2';
 
 const ASSETS = [
   './',
