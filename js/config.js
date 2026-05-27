@@ -203,18 +203,34 @@ async function forzarSync() {
 
   // 2. Descubrir tambos en el script que no están en este dispositivo
   let tambosNuevos = [];
+  let errorScript  = null;
   try {
     const res  = await fetch(`${vet.appsScriptUrl}?action=list`, { redirect: 'follow' });
     const data = await res.json();
-    const remote  = data.tambos || [];
-    const locales = await getTambos();
-    const sheetIdsLocales = new Set(locales.map(t => t.sheetId).filter(Boolean));
-    tambosNuevos = remote.filter(t => t.sheetId && !sheetIdsLocales.has(t.sheetId));
+
+    // Si el script devuelve error o no tiene "tambos", probablemente no fue redesplegado
+    if (data.ok === false) {
+      errorScript = 'El script devolvió un error: ' + data.error +
+        '\n\n¿Redesplegaste el Apps Script con la versión nueva?';
+    } else if (!Array.isArray(data.tambos)) {
+      errorScript = 'El script no reconoce el comando "list".' +
+        '\n\nNecesitás redesplegar el Apps Script:\n' +
+        'Implementar → Administrar implementaciones → editar → Nueva versión → Implementar';
+    } else {
+      const locales = await getTambos();
+      const sheetIdsLocales = new Set(locales.map(t => t.sheetId).filter(Boolean));
+      tambosNuevos = data.tambos.filter(t => t.sheetId && !sheetIdsLocales.has(t.sheetId));
+    }
   } catch (err) {
-    console.warn('[sync] No se pudo consultar la lista de tambos:', err.message);
+    errorScript = 'No se pudo conectar con el script: ' + err.message;
   }
 
   if (btn) { btn.textContent = 'Forzar sincronización ↑'; btn.disabled = false; }
+
+  if (errorScript) {
+    alert('⚠️ ' + errorScript);
+    return;
+  }
 
   // 3. Ofrecer importar los tambos nuevos
   if (tambosNuevos.length > 0) {
@@ -234,6 +250,8 @@ async function forzarSync() {
       }
       navigate('/config');
     }
+  } else {
+    _showToast('✓ Todo sincronizado. Sin tambos nuevos.');
   }
 }
 
