@@ -234,7 +234,65 @@ function _planillaHTML() {
 
 // ─── Acciones ─────────────────────────────────────────────────────────────────
 
-function compartirWhatsApp() {
+async function compartirWhatsApp() {
+  // Intentar compartir como imagen si el browser lo soporta
+  const testFile = new File([''], 'test.png', { type: 'image/png' });
+  const puedeImagen = typeof html2canvas !== 'undefined' &&
+    typeof navigator.share === 'function' &&
+    navigator.canShare?.({ files: [testFile] });
+
+  if (puedeImagen) {
+    await _compartirImagen();
+  } else {
+    _compartirTexto();
+  }
+}
+
+async function _compartirImagen() {
+  const { tambo, control } = _pd;
+
+  const btn = document.querySelector('.pl-actions button');
+  if (btn) { btn.textContent = '⏳ Generando imagen…'; btn.disabled = true; }
+
+  // Ocultar botones durante la captura
+  const actionsEl = document.querySelector('.pl-actions');
+  if (actionsEl) actionsEl.style.visibility = 'hidden';
+
+  try {
+    const bodyEl = document.querySelector('.pl-body');
+
+    const canvas = await html2canvas(bodyEl, {
+      backgroundColor: '#F4F1EC',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      width:  bodyEl.scrollWidth,
+      height: bodyEl.scrollHeight,
+    });
+
+    canvas.toBlob(async (blob) => {
+      const nombre = `control-${tambo.nombre}-${control.fecha}.png`.replace(/\s+/g, '-');
+      const file   = new File([blob], nombre, { type: 'image/png' });
+      try {
+        await navigator.share({
+          files: [file],
+          title: `Control Lechero — ${tambo.nombre}`,
+        });
+      } catch (err) {
+        // AbortError = usuario canceló el share sheet, no es un error real
+        if (err.name !== 'AbortError') _compartirTexto();
+      }
+    }, 'image/png');
+
+  } catch (err) {
+    _compartirTexto();
+  } finally {
+    if (actionsEl) actionsEl.style.visibility = '';
+    if (btn) { btn.textContent = '📱 Compartir por WhatsApp'; btn.disabled = false; }
+  }
+}
+
+function _compartirTexto() {
   const { tambo, vet, control, stats } = _pd;
   const lineas = [
     `*Control lechero — ${tambo.nombre}*`,
@@ -246,8 +304,8 @@ function compartirWhatsApp() {
     `📊 *Total día: ${_fmtLp(stats.totalDia)} L*`,
     `📈 Promedio: ${stats.promedio > 0 ? stats.promedio.toFixed(1) : '—'} L/vaca`,
   ];
-  if (stats.cantSecar > 0)   lineas.push(`🔵 A secar: ${stats.cantSecar}`);
-  if (stats.cantVenta > 0)   lineas.push(`🟠 A venta: ${stats.cantVenta}`);
+  if (stats.cantSecar > 0)     lineas.push(`🔵 A secar: ${stats.cantSecar}`);
+  if (stats.cantVenta > 0)     lineas.push(`🟠 A venta: ${stats.cantVenta}`);
   if (stats.cantPendiente > 0) lineas.push(`⏳ Pendientes: ${stats.cantPendiente}`);
   if (vet) lineas.push(``, `_${vet.nombre}${vet.matricula ? ' — Mat. ' + vet.matricula : ''}_`);
 

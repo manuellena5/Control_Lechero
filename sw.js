@@ -1,6 +1,6 @@
 /* sw.js — Service Worker offline-first */
 
-const CACHE = 'control-lechero-v4';
+const CACHE = 'control-lechero-v5';
 
 const ASSETS = [
   './',
@@ -15,6 +15,7 @@ const ASSETS = [
   './js/tambos.js',
   './js/sync.js',
   './js/registro.js',
+  './js/html2canvas.min.js',
   './js/planilla.js',
   './js/padron.js',
   './js/config.js',
