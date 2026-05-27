@@ -187,13 +187,54 @@ async function forzarSync() {
     alert('Sin conexión a internet.');
     return;
   }
+
+  const vet = await getVeterinario();
+  if (!vet?.appsScriptUrl) {
+    alert('Primero configurá la URL del Apps Script en la sección "Veterinario".');
+    return;
+  }
+
   const btn = document.getElementById('btn-force-sync');
   if (btn) { btn.textContent = '⏳ Sincronizando…'; btn.disabled = true; }
 
+  // 1. Push: enviar controles pendientes
   await procesarQueue();
-
-  if (btn) { btn.textContent = 'Forzar sincronización'; btn.disabled = false; }
   await updateSyncBadges();
+
+  // 2. Descubrir tambos en el script que no están en este dispositivo
+  let tambosNuevos = [];
+  try {
+    const res  = await fetch(`${vet.appsScriptUrl}?action=list`, { redirect: 'follow' });
+    const data = await res.json();
+    const remote  = data.tambos || [];
+    const locales = await getTambos();
+    const sheetIdsLocales = new Set(locales.map(t => t.sheetId).filter(Boolean));
+    tambosNuevos = remote.filter(t => t.sheetId && !sheetIdsLocales.has(t.sheetId));
+  } catch (err) {
+    console.warn('[sync] No se pudo consultar la lista de tambos:', err.message);
+  }
+
+  if (btn) { btn.textContent = 'Forzar sincronización ↑'; btn.disabled = false; }
+
+  // 3. Ofrecer importar los tambos nuevos
+  if (tambosNuevos.length > 0) {
+    const lista = tambosNuevos.map(t => `• ${t.nombre} (${t.propietario})`).join('\n');
+    if (confirm(
+      `Se encontraron ${tambosNuevos.length} tambo${tambosNuevos.length !== 1 ? 's' : ''} ` +
+      `en el script que no están en este dispositivo:\n\n${lista}\n\n¿Importarlos?`
+    )) {
+      for (const t of tambosNuevos) {
+        const tamboId = await saveTambo({
+          nombre:      t.nombre,
+          propietario: t.propietario,
+          telefono:    '',
+          sheetId:     t.sheetId,
+        });
+        await pullFromSheet(tamboId);
+      }
+      navigate('/config');
+    }
+  }
 }
 
 // ─── Pull por tambo desde Config ─────────────────────────────────────────────
