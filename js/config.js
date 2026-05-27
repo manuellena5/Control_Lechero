@@ -1,13 +1,14 @@
 /* config.js — Pantalla de configuración */
 
 registerScreen('config', async (el) => {
-  const vet = (await getVeterinario()) || {};
-  el.innerHTML = _configHTML(vet);
+  const [vet, tambos] = await Promise.all([getVeterinario(), getTambos()]);
+  el.innerHTML = _configHTML(vet, tambos);
+  updateSyncBadges();
 });
 
 // ─── HTML ─────────────────────────────────────────────────────────────────────
 
-function _configHTML(vet) {
+function _configHTML(vet, tambos) {
   return `
     <div class="page-header">
       <div></div>
@@ -45,12 +46,46 @@ function _configHTML(vet) {
       <div class="card">
         <h3 class="card-title">Sincronización</h3>
         <div class="config-sync-row">
-          <span class="text3">Estado</span>
+          <span class="text3">Pendientes</span>
           <span class="sync-badge"></span>
         </div>
         <button class="btn btn-secondary btn-full" onclick="forzarSync()" id="btn-force-sync">
-          Forzar sincronización
+          Forzar sincronización ↑
         </button>
+      </div>
+
+      <!-- Restaurar desde Sheets -->
+      <div class="card">
+        <h3 class="card-title">Restaurar desde Sheets</h3>
+        ${tambos.length === 0
+          ? `<p class="text3">No hay tambos configurados.</p>`
+          : tambos.map(t => `
+            <div class="config-sync-row" style="margin-bottom:10px">
+              <div>
+                <div style="font-weight:500">${t.nombre}</div>
+                <div class="text3" style="font-size:12px">
+                  ${t.sheetId
+                    ? `Sheet: <span class="mono">${t.sheetId.slice(0, 16)}…</span>`
+                    : 'Sin Sheet ID'}
+                  ${t.syncedAt
+                    ? ` · sync ${new Date(t.syncedAt).toLocaleDateString('es-AR')}`
+                    : ''}
+                </div>
+              </div>
+              ${t.sheetId
+                ? `<button class="btn btn-secondary btn-sm" id="cfg-pull-${t.id}"
+                           onclick="configPullTambo(${t.id})">↓ Restaurar</button>`
+                : `<span class="text3" style="font-size:12px">—</span>`}
+            </div>`).join('')
+        }
+        ${tambos.some(t => t.sheetId) ? `
+        <button class="btn btn-secondary btn-full" style="margin-top:4px"
+                onclick="configPullTodos()">
+          ↓ Restaurar todos desde Sheets
+        </button>` : ''}
+        <p class="form-hint" style="margin-top:8px">
+          Importa controles del Sheet que no existan localmente. Los datos locales no se modifican.
+        </p>
       </div>
 
       <!-- Backup -->
@@ -104,6 +139,37 @@ async function forzarSync() {
 
   if (btn) { btn.textContent = 'Forzar sincronización'; btn.disabled = false; }
   await updateSyncBadges();
+}
+
+// ─── Pull por tambo desde Config ─────────────────────────────────────────────
+
+async function configPullTambo(tamboId) {
+  if (!navigator.onLine) { alert('Sin conexión a internet.'); return; }
+  const btn = document.getElementById('cfg-pull-' + tamboId);
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+  const r = await pullFromSheet(tamboId);
+
+  if (btn) { btn.textContent = '↓ Restaurar'; btn.disabled = false; }
+  if (!r.ok) alert('❌ Error al importar:\n' + r.error);
+}
+
+async function configPullTodos() {
+  if (!navigator.onLine) { alert('Sin conexión a internet.'); return; }
+  const tambos = (await getTambos()).filter(t => t.sheetId);
+  if (!tambos.length) return;
+
+  const btn = document.querySelector('[onclick="configPullTodos()"]');
+  if (btn) { btn.textContent = '⏳ Importando…'; btn.disabled = true; }
+
+  let totalImportados = 0;
+  for (const t of tambos) {
+    const r = await pullFromSheet(t.id);
+    if (r.ok) totalImportados += r.importados;
+  }
+
+  if (btn) { btn.textContent = '↓ Restaurar todos desde Sheets'; btn.disabled = false; }
+  _showToast(`✓ ${totalImportados} control${totalImportados !== 1 ? 'es' : ''} importado${totalImportados !== 1 ? 's' : ''} en total`);
 }
 
 // ─── Backup export ────────────────────────────────────────────────────────────

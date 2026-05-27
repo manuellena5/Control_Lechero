@@ -1,6 +1,8 @@
 // Code.gs — Google Apps Script para Control Lechero
 // Desplegar como: Ejecutar como "Yo", acceso "Cualquier persona"
 
+// ─── doPost: recibe un control y lo escribe en la hoja visual + _datos ────────
+
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
@@ -97,6 +99,9 @@ function doPost(e) {
     // Alinear números a la derecha
     hoja.getRange(FILA_HEADER + 1, 3, regs.length + 1, 3).setHorizontalAlignment('right');
 
+    // ── Actualizar hoja _datos ──────────────────────────────────────────────
+    _actualizarDatos(ss, data);
+
     return ContentService
       .createTextOutput(JSON.stringify({ ok: true }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -108,7 +113,102 @@ function doPost(e) {
   }
 }
 
-// Función de test — ejecutar manualmente desde el editor para verificar
+// ─── doGet: devuelve el JSON de _datos para el sheetId dado ──────────────────
+
+function doGet(e) {
+  try {
+    const sheetId = e.parameter.sheetId;
+    if (!sheetId) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: false, error: 'Falta parámetro sheetId.' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const ss        = SpreadsheetApp.openById(sheetId);
+    const hojaDatos = ss.getSheetByName('_datos');
+
+    if (!hojaDatos) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ controles: [], padron: [] }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const raw  = hojaDatos.getRange('A1').getValue();
+    const datos = raw ? JSON.parse(raw) : { controles: [], padron: [] };
+
+    return ContentService
+      .createTextOutput(JSON.stringify(datos))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ─── _actualizarDatos: mantiene la hoja _datos con el historial completo ─────
+
+function _actualizarDatos(ss, data) {
+  let hojaDatos = ss.getSheetByName('_datos');
+  if (!hojaDatos) {
+    hojaDatos = ss.insertSheet('_datos');
+    hojaDatos.hideSheet();
+  }
+
+  // Leer datos existentes
+  let datos = { tambo: {}, controles: [], padron: [] };
+  try {
+    const raw = hojaDatos.getRange('A1').getValue();
+    if (raw) datos = JSON.parse(raw);
+  } catch(e) {}
+
+  // Datos del tambo
+  datos.tambo = {
+    nombre:      data.control.tambo,
+    propietario: data.control.propietario,
+  };
+
+  // Convertir fecha de DD-MM-YYYY → YYYY-MM-DD
+  const partes   = data.control.fecha.split('-');
+  const fechaISO = partes[2] + '-' + partes[1] + '-' + partes[0];
+
+  // Reemplazar o agregar el control de esta fecha
+  const controlData = {
+    fecha: fechaISO,
+    registros: (data.registros || []).map(function(r) {
+      return {
+        rp:           r.rp,
+        litrosMañana: r.litrosMañana,
+        litrosTarde:  r.litrosTarde,
+        estado:       r.estado,
+      };
+    }),
+  };
+
+  const idx = datos.controles.findIndex(function(c) { return c.fecha === fechaISO; });
+  if (idx >= 0) {
+    datos.controles[idx] = controlData;
+  } else {
+    datos.controles.push(controlData);
+  }
+
+  // Actualizar padrón (solo agrega, nunca elimina)
+  const rpSet = new Set(datos.padron.map(function(p) { return p.rp; }));
+  (data.registros || []).forEach(function(r) {
+    if (!rpSet.has(r.rp)) {
+      datos.padron.push({ rp: r.rp, activa: true, fechaAlta: fechaISO });
+      rpSet.add(r.rp);
+    }
+  });
+
+  datos.updatedAt = new Date().toISOString();
+
+  hojaDatos.getRange('A1').setValue(JSON.stringify(datos));
+}
+
+// ─── Test manual ─────────────────────────────────────────────────────────────
+
 function testDoPost() {
   const payload = {
     sheetId: 'REEMPLAZAR_CON_ID_REAL',

@@ -122,14 +122,33 @@ async function guardarTambo(event, id) {
   event.preventDefault();
   const form = event.target;
   const data = {
-    nombre:     form.nombre.value.trim(),
-    propietario:form.propietario.value.trim(),
-    telefono:   form.telefono.value.trim(),
-    sheetId:    form.sheetId.value.trim() || null,
+    nombre:      form.nombre.value.trim(),
+    propietario: form.propietario.value.trim(),
+    telefono:    form.telefono.value.trim(),
+    sheetId:     form.sheetId.value.trim() || null,
   };
   if (id) data.id = id;
   const tamboId = await saveTambo(data);
-  navigate('/tambos/' + (id || tamboId));
+
+  // Si tiene sheetId y no hay controles locales → ofrecer pull
+  if (data.sheetId) {
+    const count = await db.controles.where('tamboId').equals(tamboId).count();
+    if (count === 0) {
+      navigate('/tambos/' + tamboId);
+      if (confirm(
+        '¿Restaurar datos desde Google Sheets?\n\n' +
+        'Este tambo tiene un Sheet vinculado. ' +
+        '¿Querés importar el historial existente?'
+      )) {
+        const r = await pullFromSheet(tamboId);
+        if (!r.ok) alert('❌ Error al importar:\n' + r.error);
+        else refresh();
+      }
+      return;
+    }
+  }
+
+  navigate('/tambos/' + tamboId);
 }
 
 // ─── Detalle del tambo ────────────────────────────────────────────────────────
@@ -188,6 +207,13 @@ registerScreen('tambo-detalle', async (el, params) => {
         Ver padrón de vacas
       </button>
 
+      ${tambo.sheetId ? `
+      <!-- Restaurar desde Sheets -->
+      <button class="btn btn-secondary btn-full" id="btn-pull-${tamboId}"
+              onclick="restaurarDesdeSheetsDetalle(${tamboId})">
+        ☁️ Restaurar desde Sheets
+      </button>` : ''}
+
       <!-- Historial de controles -->
       <div class="section-title">Historial</div>
       ${controlesConTotal.length === 0
@@ -207,6 +233,30 @@ registerScreen('tambo-detalle', async (el, params) => {
     </div>
   `;
 });
+
+async function restaurarDesdeSheetsDetalle(tamboId) {
+  if (!navigator.onLine) {
+    alert('Sin conexión a internet.');
+    return;
+  }
+  if (!confirm(
+    'Esto importará los controles del Sheet que no existan localmente.\n' +
+    'Los datos locales no se modificarán.\n\n¿Continuar?'
+  )) return;
+
+  const btn = document.getElementById('btn-pull-' + tamboId);
+  if (btn) { btn.textContent = '⏳ Importando…'; btn.disabled = true; }
+
+  const r = await pullFromSheet(tamboId);
+
+  if (btn) { btn.textContent = '☁️ Restaurar desde Sheets'; btn.disabled = false; }
+
+  if (!r.ok) {
+    alert('❌ Error al importar:\n' + r.error);
+  } else if (r.importados > 0) {
+    refresh();
+  }
+}
 
 async function iniciarControl(tamboId) {
   const fechaInput = document.getElementById('fecha-control');

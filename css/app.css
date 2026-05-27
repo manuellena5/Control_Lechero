@@ -1079,6 +1079,52 @@ h3 { font-size: 15px; font-weight: 600; }
   gap: 8px;
 }
 
+/* ── Toast de sync ───────────────────────────────────────────────────────── */
+
+.sync-toast {
+  position: fixed;
+  bottom: calc(var(--nav-height) + 16px);
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: var(--text);
+  color: var(--surface);
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 300;
+  white-space: nowrap;
+  pointer-events: none;
+  max-width: calc(100% - 40px);
+  text-align: center;
+}
+.sync-toast--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.sync-toast--loading { background: var(--accent); }
+
+/* ── Responsive desktop ──────────────────────────────────────────────────── */
+
+@media (min-width: 600px) {
+  body {
+    display: flex;
+    justify-content: center;
+    background: var(--bg);
+  }
+
+  #app {
+    box-shadow: 0 0 48px rgba(0,0,0,0.10);
+    background: var(--surface);
+  }
+
+  .sync-toast {
+    max-width: 390px;
+  }
+}
+
 /* ── Pantalla placeholder ─────────────────────────────────────────────────── */
 
 .placeholder-screen {

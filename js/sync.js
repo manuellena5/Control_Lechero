@@ -178,6 +178,139 @@ async function _borrarJobsDeControl(controlId) {
   if (keys.length) await db.syncQueue.bulkDelete(keys);
 }
 
+// ─── Pull desde Google Sheets ─────────────────────────────────────────────────
+
+async function pullFromSheet(tamboId) {
+  const [tambo, vet] = await Promise.all([getTambo(tamboId), getVeterinario()]);
+
+  if (!tambo?.sheetId)     return { ok: false, error: 'Este tambo no tiene Sheet ID configurado.' };
+  if (!vet?.appsScriptUrl) return { ok: false, error: 'Sin URL de Apps Script. Configurala en Ajustes.' };
+
+  _showToast('⏳ Importando desde Sheets…', 'loading');
+
+  let data;
+  try {
+    const url = `${vet.appsScriptUrl}?sheetId=${encodeURIComponent(tambo.sheetId)}`;
+    const res = await fetch(url, { redirect: 'follow' });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    data = await res.json();
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+
+  if (data.ok === false) return { ok: false, error: data.error || 'Error en el servidor.' };
+  if (!Array.isArray(data.controles)) return { ok: false, error: 'Respuesta inesperada del servidor.' };
+
+  // Importar controles (local tiene prioridad — no sobreescribir)
+  let importados = 0;
+  for (const cd of data.controles) {
+    const existe = await db.controles
+      .where('[tamboId+fecha]').equals([tamboId, cd.fecha]).first();
+    if (existe) continue;
+
+    const controlId = await db.controles.add({ tamboId, fecha: cd.fecha });
+    const regs = cd.registros || [];
+
+    // Vacas con litros de mañana + pendientes → tanda mañana
+    const paraMañana = regs.filter(r => r.litrosMañana != null || r.estado === 'pendiente');
+    if (paraMañana.length > 0) {
+      const tandaId = await db.tandas.add({ controlId, turno: 'mañana', numero: 1 });
+      for (const r of paraMañana) {
+        await db.registros.add({
+          tandaId, rp: r.rp,
+          litros: r.litrosMañana ?? null,
+          estado: r.estado || 'normal',
+        });
+      }
+    }
+
+    // Vacas con litros de tarde → tanda tarde
+    const paraTarde = regs.filter(r => r.litrosTarde != null);
+    if (paraTarde.length > 0) {
+      const tandaId = await db.tandas.add({ controlId, turno: 'tarde', numero: 1 });
+      for (const r of paraTarde) {
+        await db.registros.add({
+          tandaId, rp: r.rp,
+          litros: r.litrosTarde,
+          estado: r.estado || 'normal',
+        });
+      }
+    }
+
+    // Vacas solo con estado (venta/secar sin litros) que no entraron en ninguna tanda
+    const soloEstado = regs.filter(r =>
+      r.litrosMañana == null && r.litrosTarde == null && r.estado !== 'pendiente'
+    );
+    if (soloEstado.length > 0) {
+      // Agregar a mañana (o crear la tanda si no existía)
+      let tandaMañana = await db.tandas
+        .where('controlId').equals(controlId).filter(t => t.turno === 'mañana').first();
+      if (!tandaMañana) {
+        const tid = await db.tandas.add({ controlId, turno: 'mañana', numero: 1 });
+        tandaMañana = { id: tid };
+      }
+      for (const r of soloEstado) {
+        await db.registros.add({
+          tandaId: tandaMañana.id, rp: r.rp,
+          litros: null, estado: r.estado,
+        });
+      }
+    }
+
+    importados++;
+  }
+
+  // Importar padrón (solo agregar, nunca eliminar)
+  if (Array.isArray(data.padron)) {
+    for (const p of data.padron) {
+      const existe = await db.vacas_registro
+        .where('[tamboId+rp]').equals([tamboId, p.rp]).first();
+      if (!existe) {
+        await db.vacas_registro.add({
+          tamboId, rp: p.rp,
+          activa:    p.activa !== false,
+          fechaAlta: p.fechaAlta || fechaHoy(),
+          notas:     '',
+        });
+      }
+    }
+  }
+
+  await db.tambos.update(tamboId, { syncedAt: new Date() });
+
+  if (data.controles.length === 0) {
+    _showToast('El Sheet aún no tiene controles registrados.');
+  } else if (importados === 0) {
+    _showToast('✓ Todo ya estaba sincronizado.');
+  } else {
+    _showToast(`✓ ${importados} control${importados !== 1 ? 'es' : ''} importado${importados !== 1 ? 's' : ''}`);
+  }
+
+  return { ok: true, importados };
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+
+function _showToast(msg, tipo = 'ok') {
+  const prev = document.getElementById('sync-toast');
+  if (prev) prev.remove();
+
+  const toast = document.createElement('div');
+  toast.id        = 'sync-toast';
+  toast.className = `sync-toast sync-toast--${tipo}`;
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add('sync-toast--visible'));
+
+  if (tipo !== 'loading') {
+    setTimeout(() => {
+      toast.classList.remove('sync-toast--visible');
+      toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+    }, 3000);
+  }
+}
+
 // ─── Indicadores de sync ──────────────────────────────────────────────────────
 
 async function updateSyncBadges() {
