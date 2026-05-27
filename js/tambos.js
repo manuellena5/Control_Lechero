@@ -130,6 +130,11 @@ async function guardarTambo(event, id) {
   if (id) data.id = id;
   const tamboId = await saveTambo(data);
 
+  // Registrar el tambo en el script para que otros dispositivos lo descubran
+  if (data.sheetId && navigator.onLine) {
+    _registrarTamboEnScript(data.sheetId, data.nombre, data.propietario).catch(() => {});
+  }
+
   // Si tiene sheetId y no hay controles locales → ofrecer pull
   if (data.sheetId) {
     const count = await db.controles.where('tamboId').equals(tamboId).count();
@@ -233,6 +238,17 @@ registerScreen('tambo-detalle', async (el, params) => {
     </div>
   `;
 });
+
+async function _registrarTamboEnScript(sheetId, nombre, propietario) {
+  const vet = await getVeterinario();
+  if (!vet?.appsScriptUrl) return;
+  await fetch(vet.appsScriptUrl, {
+    method:   'POST',
+    headers:  { 'Content-Type': 'text/plain;charset=utf-8' },
+    body:     JSON.stringify({ action: 'register', sheetId, nombre, propietario }),
+    redirect: 'follow',
+  });
+}
 
 async function restaurarDesdeSheetsDetalle(tamboId) {
   if (!navigator.onLine) {

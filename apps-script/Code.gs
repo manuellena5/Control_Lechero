@@ -6,6 +6,15 @@
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
+
+    // action=register: solo registra el tambo, sin escribir hoja visual
+    if (data.action === 'register') {
+      _registrarTambo(data.sheetId, data.nombre, data.propietario);
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     const ss   = SpreadsheetApp.openById(data.sheetId);
 
     // Buscar o crear la hoja con el nombre de la fecha ("10-05-2026")
