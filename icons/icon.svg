@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Fondo verde redondeado -->
+  <rect width="512" height="512" rx="112" fill="#2D6A4F"/>
+  <!-- Gota de leche -->
+  <path d="M256 110 C256 110 160 220 160 295 C160 353 202 400 256 400 C310 400 352 353 352 295 C352 220 256 110 256 110Z" fill="white" opacity="0.95"/>
+  <!-- Reflejo -->
+  <ellipse cx="232" cy="270" rx="18" ry="30" fill="white" opacity="0.35" transform="rotate(-20 232 270)"/>
+</svg>

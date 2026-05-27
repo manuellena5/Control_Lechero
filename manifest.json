@@ -1,0 +1,19 @@
+{
+  "name": "Control Lechero",
+  "short_name": "C. Lechero",
+  "description": "Control de producción lechera para veterinarios",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2D6A4F",
+  "theme_color": "#2D6A4F",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
