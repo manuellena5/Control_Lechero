@@ -870,7 +870,14 @@ h3 { font-size: 15px; font-weight: 600; }
 
 .print-only { display: none; }
 
-#print-layout { display: none; }
+/* Off-screen pero ya layouteado para que print no tenga delay */
+#print-layout {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 210mm;
+  pointer-events: none;
+}
 
 .print-header { margin-bottom: 12px; }
 .print-header h2 { font-size: 16px; margin-bottom: 2px; }
@@ -886,9 +893,12 @@ h3 { font-size: 15px; font-weight: 600; }
   /* Ocultar toda la app */
   #app { display: none !important; }
 
-  /* Mostrar solo el layout de impresión */
+  /* Traer el layout de impresión a posición normal */
   #print-layout {
-    display: block !important;
+    position: static !important;
+    left: 0 !important;
+    width: 100% !important;
+    pointer-events: auto;
   }
 
   .print-pag {

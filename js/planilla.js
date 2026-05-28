@@ -433,6 +433,9 @@ async function generarPDF() {
   }
   el.innerHTML = html;
 
+  // Esperar dos frames para que el browser termine el layout antes de imprimir
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
   window.onafterprint = () => { el.innerHTML = ''; };
   window.print();
 }
