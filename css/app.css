@@ -1145,6 +1145,138 @@ h3 { font-size: 15px; font-weight: 600; }
   }
 }
 
+/* ── Desktop layout (≥768px) ─────────────────────────────────────────────── */
+
+@media (min-width: 768px) {
+
+  /* ─ Shell ─ */
+
+  #app {
+    flex-direction: row;
+    max-width: 1280px;
+    width: 100%;
+    height: 100dvh;
+  }
+
+  /* ─ Sidebar ─ */
+
+  #bottom-nav {
+    /* Des-anclar del fixed mobile */
+    position: static;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    z-index: auto;
+
+    /* Sidebar vertical */
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    width: 220px;
+    flex-shrink: 0;
+    height: 100%;
+    max-width: none;
+    border-top: none;
+    border-right: 1px solid var(--border);
+    padding: 16px 10px 24px;
+    gap: 2px;
+    overflow-y: auto;
+  }
+
+  /* Cabecera del sidebar con el nombre de la app */
+  #bottom-nav::before {
+    content: 'Control Lechero';
+    display: block;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+    padding: 4px 14px 18px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+    letter-spacing: .01em;
+    flex-shrink: 0;
+  }
+
+  /* Items de nav como filas horizontales */
+  .nav-item {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 11px;
+    padding: 11px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 500;
+    min-height: 42px;
+  }
+
+  .nav-item.active {
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+
+  .nav-item svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  /* ─ Content area ─ */
+
+  #app-content {
+    padding-bottom: 0; /* no hay bottom-nav reservando espacio */
+  }
+
+  /* ─ Tipografía ─ */
+
+  h1 { font-size: 26px; }
+  h2 { font-size: 22px; }
+
+  /* ─ Page body ─ */
+
+  .page-body {
+    padding: 20px 28px;
+    max-width: 960px;
+  }
+
+  /* ─ Cards ─ */
+
+  .card {
+    padding: 18px 20px;
+  }
+
+  /* ─ Planilla: botones de acción en fila ─ */
+
+  .pl-actions {
+    flex-direction: row;
+  }
+
+  /* ─ Planilla / Home: resumen puede expandirse a más columnas ─ */
+
+  .resumen-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  /* ─ Registro: footer con más padding ─ */
+
+  .reg-footer {
+    padding: 14px 20px;
+  }
+
+  /* ─ Config: botones de backup en fila ─ */
+
+  .config-backup-btns {
+    flex-direction: row;
+  }
+
+  /* ─ Toast ─ */
+
+  .sync-toast {
+    max-width: 420px;
+  }
+}
+
 /* ── Modal de actualización (bloqueante) ─────────────────────────────────── */
 
 .update-modal {
