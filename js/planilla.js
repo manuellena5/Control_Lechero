@@ -249,47 +249,145 @@ async function compartirWhatsApp() {
 }
 
 async function _compartirImagen() {
-  const { tambo, control } = _pd;
+  const { tambo, vet, control, vacas, stats } = _pd;
+  const COLS      = 2;
+  const FILAS_COL = 40;
+  const POR_PAG   = COLS * FILAS_COL;
 
   const btn = document.querySelector('.pl-actions button');
   if (btn) { btn.textContent = '⏳ Generando imagen…'; btn.disabled = true; }
 
-  // Ocultar botones durante la captura
-  const actionsEl = document.querySelector('.pl-actions');
-  if (actionsEl) actionsEl.style.visibility = 'hidden';
-
   try {
-    const bodyEl = document.querySelector('.pl-body');
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;';
+    document.body.appendChild(container);
 
-    const canvas = await html2canvas(bodyEl, {
-      backgroundColor: '#F4F1EC',
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      width:  bodyEl.scrollWidth,
-      height: bodyEl.scrollHeight,
-    });
+    const totalPags = Math.max(1, Math.ceil(vacas.length / POR_PAG));
+    const files = [];
 
-    canvas.toBlob(async (blob) => {
-      const nombre = `control-${tambo.nombre}-${control.fecha}.png`.replace(/\s+/g, '-');
-      const file   = new File([blob], nombre, { type: 'image/png' });
-      try {
-        await navigator.share({
-          files: [file],
-          title: `Control Lechero — ${tambo.nombre}`,
-        });
-      } catch (err) {
-        // AbortError = usuario canceló el share sheet, no es un error real
-        if (err.name !== 'AbortError') _compartirTexto();
-      }
-    }, 'image/png');
+    for (let p = 0; p < totalPags; p++) {
+      const startIdx  = p * POR_PAG;
+      const pageVacas = vacas.slice(startIdx, startIdx + POR_PAG);
+      container.innerHTML = _buildPagHTML(tambo, vet, control, pageVacas, startIdx, p + 1, totalPags, stats);
+
+      const canvas = await html2canvas(container.firstElementChild, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      const file = await new Promise(res => {
+        canvas.toBlob(blob => {
+          const suf  = totalPags > 1 ? `-hoja${p + 1}` : '';
+          const name = `control-${tambo.nombre}-${control.fecha}${suf}.png`.replace(/\s+/g, '-');
+          res(new File([blob], name, { type: 'image/png' }));
+        }, 'image/png');
+      });
+      files.push(file);
+    }
+
+    document.body.removeChild(container);
+
+    await navigator.share({ files, title: `Control Lechero — ${tambo.nombre}` });
 
   } catch (err) {
-    _compartirTexto();
+    if (err.name !== 'AbortError') _compartirTexto();
   } finally {
-    if (actionsEl) actionsEl.style.visibility = '';
     if (btn) { btn.textContent = '📱 Compartir por WhatsApp'; btn.disabled = false; }
   }
+}
+
+// ─── Construcción de la página imagen ────────────────────────────────────────
+
+function _buildPagHTML(tambo, vet, control, pageVacas, startIdx, pagNum, totalPags, stats) {
+  const FILAS_COL = 40;
+  const colA = pageVacas.slice(0, FILAS_COL);
+  const colB = pageVacas.slice(FILAS_COL);
+  const filas = Math.max(colA.length, colB.length);
+  const isLast = pagNum === totalPags;
+
+  const [y, m, d] = control.fecha.split('-');
+  const vetLinea  = vet ? `${vet.nombre}${vet.matricula ? '   Mat. ' + vet.matricula : ''}` : '';
+
+  const TH = 'padding:4px 3px;background:#2D6A4F;color:#fff;font-weight:700;font-size:10.5px;text-align:center;border:1px solid #1a5c3a;';
+  const TD = 'padding:3px 4px;font-size:11px;border:1px solid #ddd;text-align:center;';
+  const SEP = 'width:8px;background:#f0f0f0;border:none;';
+
+  let rows = '';
+  for (let i = 0; i < filas; i++) {
+    const a = colA[i], b = colB[i];
+    rows += `<tr>
+      ${a ? _imgCeldas(a, startIdx + i + 1, TD) : `<td colspan="5" style="${TD}"></td>`}
+      <td style="${SEP}"></td>
+      ${b ? _imgCeldas(b, startIdx + FILAS_COL + i + 1, TD) : `<td colspan="5" style="${TD}"></td>`}
+    </tr>`;
+  }
+
+  const totalRow = isLast ? `<tr>
+    <td colspan="2" style="${TD}background:#D8EFDF;font-weight:700;text-align:right;">TOTAL</td>
+    <td style="${TD}background:#D8EFDF;font-weight:700;">${_fmtLp(stats.totalMañana)}</td>
+    <td style="${TD}background:#D8EFDF;font-weight:700;">${_fmtLp(stats.totalTarde)}</td>
+    <td style="${TD}background:#D8EFDF;font-weight:700;">${_fmtLp(stats.totalDia)}</td>
+    <td style="${SEP}"></td>
+    <td colspan="5" style="${TD}background:#D8EFDF;font-size:10px;color:#2D6A4F;">
+      ${stats.cantVacas} vacas · prom. ${stats.promedio > 0 ? stats.promedio.toFixed(1) : '—'} L/vaca
+      ${stats.cantSecar > 0 ? ` · secar: ${stats.cantSecar}` : ''}
+      ${stats.cantVenta > 0 ? ` · venta: ${stats.cantVenta}` : ''}
+    </td>
+  </tr>` : '';
+
+  return `
+  <div style="width:760px;padding:14px 16px;background:#fff;font-family:Arial,sans-serif;box-sizing:border-box;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2.5px solid #2D6A4F;">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#1A1A18;letter-spacing:.03em;">PLANILLA CONTROL LECHERO</div>
+        <div style="font-size:11px;color:#6B6560;margin-top:2px;">${vetLinea}</div>
+      </div>
+      <div style="text-align:right;font-size:11px;color:#4A4A48;line-height:1.6;">
+        <div><strong>${tambo.nombre}</strong></div>
+        <div>Propietario: ${tambo.propietario}</div>
+        <div>Fecha: ${d}/${m}/${y}${totalPags > 1 ? `   ·   Hoja ${pagNum} / ${totalPags}` : ''}</div>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="${TH}width:26px;">#</th>
+        <th style="${TH}width:52px;">RP</th>
+        <th style="${TH}width:68px;">Lts. Mañana</th>
+        <th style="${TH}width:64px;">Lts. Tarde</th>
+        <th style="${TH}width:58px;">Total</th>
+        <th style="${SEP}"></th>
+        <th style="${TH}width:26px;">#</th>
+        <th style="${TH}width:52px;">RP</th>
+        <th style="${TH}width:68px;">Lts. Mañana</th>
+        <th style="${TH}width:64px;">Lts. Tarde</th>
+        <th style="${TH}width:58px;">Total</th>
+      </tr></thead>
+      <tbody>${rows}${totalRow}</tbody>
+    </table>
+  </div>`;
+}
+
+function _imgCeldas(v, idx, TD) {
+  const bg = v.estado === 'venta' ? 'background:#FDEBD6;'
+           : v.estado === 'secar' ? 'background:#EDE6F7;'
+           : idx % 2 === 0        ? 'background:#fafaf8;'
+           : '';
+  const td = TD + bg;
+  if (v.estado === 'venta') {
+    return `<td style="${td}">${idx}</td>
+            <td style="${td}">${v.rp}</td>
+            <td colspan="3" style="${td}color:#E76F51;font-weight:600;">VENTA</td>`;
+  }
+  const m = v.estado === 'pendiente' ? '?' : (v.hasMañana ? _fmtLp(v.litrosMañana) : '—');
+  const t = v.estado === 'pendiente' ? '?' : (v.hasTarde  ? _fmtLp(v.litrosTarde)  : '—');
+  const tot = v.estado === 'pendiente' ? '?' : _fmtLp(v.litrosMañana + v.litrosTarde);
+  return `<td style="${td}">${idx}</td>
+          <td style="${td}">${v.rp}${v.estado === 'secar' ? ' ★' : ''}</td>
+          <td style="${td}">${m}</td>
+          <td style="${td}">${t}</td>
+          <td style="${TD + bg}font-weight:600;">${tot}</td>`;
 }
 
 function _compartirTexto() {
