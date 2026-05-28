@@ -1,6 +1,6 @@
 /* sw.js — Service Worker offline-first */
 
-const CACHE = 'control-lechero-v7';
+const CACHE = 'control-lechero-v8';
 
 const ASSETS = [
   './',
@@ -20,6 +20,12 @@ const ASSETS = [
   './js/padron.js',
   './js/config.js',
 ];
+
+// ─── Mensaje desde la app (forzar actualización) ─────────────────────────────
+
+self.addEventListener('message', e => {
+  if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
 
 // ─── Install: precachear app shell ───────────────────────────────────────────
 

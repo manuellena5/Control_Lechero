@@ -88,6 +88,17 @@ function _configHTML(vet, tambos) {
         </p>
       </div>
 
+      <!-- Actualizaciones -->
+      <div class="card">
+        <h3 class="card-title">Versión de la app</h3>
+        <button class="btn btn-secondary btn-full" id="btn-update" onclick="buscarActualizaciones()">
+          🔄 Buscar actualizaciones
+        </button>
+        <p class="form-hint" style="margin-top:8px">
+          Comprueba si hay una versión nueva y la instala. La app se recargará automáticamente.
+        </p>
+      </div>
+
       <!-- Backup -->
       <div class="card">
         <h3 class="card-title">Copia de seguridad</h3>
@@ -253,6 +264,62 @@ async function forzarSync() {
   } else {
     _showToast('✓ Todo sincronizado. Sin tambos nuevos.');
   }
+}
+
+// ─── Buscar actualizaciones ───────────────────────────────────────────────────
+
+async function buscarActualizaciones() {
+  const btn = document.getElementById('btn-update');
+
+  if (!('serviceWorker' in navigator)) {
+    alert('Tu browser no soporta Service Workers. Abrí la app desde su URL en GitHub Pages.');
+    return;
+  }
+
+  if (btn) { btn.textContent = '⏳ Verificando…'; btn.disabled = true; }
+
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) {
+      _showToast('No hay Service Worker registrado.');
+      if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
+      return;
+    }
+
+    await reg.update();
+
+    if (reg.waiting) {
+      // Ya hay una versión nueva esperando → activarla
+      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      // controllerchange en index.html recargará la página
+      if (btn) btn.textContent = '⏳ Instalando…';
+      return;
+    }
+
+    if (reg.installing) {
+      // Se está descargando ahora → esperar a que quede en "waiting"
+      if (btn) btn.textContent = '⏳ Descargando…';
+      reg.installing.addEventListener('statechange', function handler(e) {
+        if (e.target.state === 'installed' && reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          e.target.removeEventListener('statechange', handler);
+        } else if (e.target.state === 'redundant') {
+          e.target.removeEventListener('statechange', handler);
+          if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
+          _showToast('Ya tenés la última versión instalada.');
+        }
+      });
+      return;
+    }
+
+    // Sin actualizaciones pendientes
+    _showToast('✓ Ya tenés la última versión instalada.');
+
+  } catch (err) {
+    _showToast('Error al verificar: ' + err.message);
+  }
+
+  if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
 }
 
 // ─── Pull por tambo desde Config ─────────────────────────────────────────────

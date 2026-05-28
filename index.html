@@ -61,6 +61,10 @@
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js');
       });
+      // Recargar automáticamente cuando el SW nuevo tome control
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.location.reload();
+      });
     }
     initSync();
     initRouter();
