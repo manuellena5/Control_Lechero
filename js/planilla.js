@@ -220,7 +220,7 @@ function _planillaHTML() {
           <button class="btn btn-primary btn-full btn-lg" onclick="compartirWhatsApp()">
             📱 Compartir por WhatsApp
           </button>
-          <button class="btn btn-secondary btn-full" onclick="window.print()">
+          <button class="btn btn-secondary btn-full" onclick="generarPDF()">
             📄 Generar PDF
           </button>
           <button class="btn btn-secondary btn-full" onclick="sincronizarSheets()">
@@ -410,6 +410,130 @@ function _compartirTexto() {
   const texto = encodeURIComponent(lineas.join('\n'));
   const tel   = tambo.telefono ? tambo.telefono.replace(/\D/g, '') : '';
   window.open(`https://wa.me/${tel}?text=${texto}`, '_blank');
+}
+
+async function generarPDF() {
+  const { tambo, vet, control, vacas, stats } = _pd;
+  const FILAS_COL = 40;
+  const POR_PAG   = FILAS_COL * 2;
+  const totalPags = Math.max(1, Math.ceil(vacas.length / POR_PAG));
+
+  let html = '';
+  for (let p = 0; p < totalPags; p++) {
+    const startIdx  = p * POR_PAG;
+    const pageVacas = vacas.slice(startIdx, startIdx + POR_PAG);
+    html += _buildPrintPage(tambo, vet, control, pageVacas, startIdx, p + 1, totalPags, stats);
+  }
+
+  let el = document.getElementById('print-layout');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'print-layout';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = html;
+
+  window.onafterprint = () => { el.innerHTML = ''; };
+  window.print();
+}
+
+function _buildPrintPage(tambo, vet, control, pageVacas, startIdx, pagNum, totalPags, stats) {
+  const FILAS_COL = 40;
+  const colA   = pageVacas.slice(0, FILAS_COL);
+  const colB   = pageVacas.slice(FILAS_COL);
+  const filas  = Math.max(colA.length, colB.length);
+  const isLast = pagNum === totalPags;
+
+  const [y, m, d] = control.fecha.split('-');
+  const vetLinea  = vet ? `${vet.nombre}${vet.matricula ? ' — Mat. ' + vet.matricula : ''}` : '';
+
+  const TH  = 'padding:2pt 3pt;background:#2D6A4F;color:#fff;font-weight:700;font-size:8pt;text-align:center;border:0.5pt solid #1a5c3a;';
+  const TD  = 'padding:2pt 3pt;font-size:8.5pt;border:0.5pt solid #ddd;text-align:center;';
+  const SEP = 'width:4mm;background:#f0f0f0;border:none;';
+
+  let rows = '';
+  for (let i = 0; i < filas; i++) {
+    const a = colA[i], b = colB[i];
+    rows += `<tr>
+      ${a ? _printCeldas(a, startIdx + i + 1, TD) : `<td colspan="5" style="${TD}"></td>`}
+      <td style="${SEP}"></td>
+      ${b ? _printCeldas(b, startIdx + FILAS_COL + i + 1, TD) : `<td colspan="5" style="${TD}"></td>`}
+    </tr>`;
+  }
+
+  const totalRow = isLast ? `<tr>
+    <td colspan="2" style="${TD}background:#D8EFDF;font-weight:700;text-align:right;">TOTAL</td>
+    <td style="${TD}background:#D8EFDF;font-weight:700;">${_fmtLp(stats.totalMañana)}</td>
+    <td style="${TD}background:#D8EFDF;font-weight:700;">${_fmtLp(stats.totalTarde)}</td>
+    <td style="${TD}background:#D8EFDF;font-weight:700;">${_fmtLp(stats.totalDia)}</td>
+    <td style="${SEP}"></td>
+    <td colspan="4" style="${TD}background:#D8EFDF;font-size:7.5pt;color:#2D6A4F;">
+      ${stats.cantVacas} vacas · prom. ${stats.promedio > 0 ? stats.promedio.toFixed(1) : '—'} L/vaca
+      ${stats.cantSecar > 0 ? ` · secar: ${stats.cantSecar}` : ''}
+      ${stats.cantVenta > 0 ? ` · venta: ${stats.cantVenta}` : ''}
+    </td>
+    <td style="${TD}background:#D8EFDF;"></td>
+  </tr>` : '';
+
+  const firmaRow = isLast && vetLinea ? `
+    <div style="margin-top:20mm;border-top:0.5pt solid #000;width:70mm;padding-top:3pt;font-size:8pt;color:#555;">
+      ${vetLinea}
+    </div>` : '';
+
+  return `
+  <div class="print-pag">
+    <div style="font-family:Arial,sans-serif;width:190mm;box-sizing:border-box;padding:8mm 0;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6pt;padding-bottom:5pt;border-bottom:1.5pt solid #2D6A4F;">
+        <div>
+          <div style="font-size:11pt;font-weight:700;color:#1A1A18;">PLANILLA CONTROL LECHERO</div>
+          <div style="font-size:8pt;color:#6B6560;margin-top:2pt;">${vetLinea}</div>
+        </div>
+        <div style="text-align:right;font-size:8.5pt;color:#4A4A48;line-height:1.6;">
+          <div><strong>${tambo.nombre}</strong></div>
+          <div>Propietario: ${tambo.propietario}</div>
+          <div>Fecha: ${d}/${m}/${y}${totalPags > 1 ? `   ·   Hoja ${pagNum} / ${totalPags}` : ''}</div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>
+          <th style="${TH}width:7mm;">#</th>
+          <th style="${TH}width:15mm;">RP</th>
+          <th style="${TH}width:19mm;">Lts. Mañana</th>
+          <th style="${TH}width:17mm;">Lts. Tarde</th>
+          <th style="${TH}width:15mm;">Total</th>
+          <th style="${SEP}"></th>
+          <th style="${TH}width:7mm;">#</th>
+          <th style="${TH}width:15mm;">RP</th>
+          <th style="${TH}width:19mm;">Lts. Mañana</th>
+          <th style="${TH}width:17mm;">Lts. Tarde</th>
+          <th style="${TH}width:15mm;">Total</th>
+        </tr></thead>
+        <tbody>${rows}${totalRow}</tbody>
+      </table>
+      ${firmaRow}
+    </div>
+  </div>`;
+}
+
+function _printCeldas(v, idx, TD) {
+  const bg = v.estado === 'venta' ? 'background:#FDEBD6;'
+           : v.estado === 'secar' ? 'background:#EDE6F7;'
+           : idx % 2 === 0        ? 'background:#fafaf8;'
+           : '';
+  const td = TD + bg;
+  if (v.estado === 'venta') {
+    return `<td style="${td}">${idx}</td>
+            <td style="${td}">${v.rp}</td>
+            <td colspan="3" style="${td}color:#E76F51;font-weight:600;">VENTA</td>`;
+  }
+  const ma  = v.estado === 'pendiente' ? '?' : (v.hasMañana ? _fmtLp(v.litrosMañana) : '—');
+  const ta  = v.estado === 'pendiente' ? '?' : (v.hasTarde  ? _fmtLp(v.litrosTarde)  : '—');
+  const tot = v.estado === 'pendiente' ? '?' : _fmtLp(v.litrosMañana + v.litrosTarde);
+  return `<td style="${td}">${idx}</td>
+          <td style="${td}">${v.rp}${v.estado === 'secar' ? ' ★' : ''}</td>
+          <td style="${td}">${ma}</td>
+          <td style="${td}">${ta}</td>
+          <td style="${TD + bg}font-weight:600;">${tot}</td>`;
 }
 
 async function sincronizarSheets() {

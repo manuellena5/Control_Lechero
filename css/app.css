@@ -870,6 +870,8 @@ h3 { font-size: 15px; font-weight: 600; }
 
 .print-only { display: none; }
 
+#print-layout { display: none; }
+
 .print-header { margin-bottom: 12px; }
 .print-header h2 { font-size: 16px; margin-bottom: 2px; }
 .print-header p  { font-size: 12px; color: #555; }
@@ -881,21 +883,29 @@ h3 { font-size: 15px; font-weight: 600; }
 @media print {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  body { background: #fff; }
+  /* Ocultar toda la app */
+  #app { display: none !important; }
 
-  #bottom-nav, .no-print { display: none !important; }
-  .print-only { display: block !important; }
+  /* Mostrar solo el layout de impresión */
+  #print-layout {
+    display: block !important;
+  }
 
-  #app-content { padding-bottom: 0; overflow: visible; }
-  .pl-body { padding: 0; gap: 10px; }
+  .print-pag {
+    display: flex;
+    justify-content: center;
+    page-break-after: always;
+    break-after: page;
+  }
+  .print-pag:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
 
-  .card, .pl-table-wrap { box-shadow: none; border: 1px solid #ccc; }
-
-  .fila-secar td { background: #EDE6F7 !important; }
-  .fila-venta td { background: #FDEBD6 !important; }
-  .total-row  td { background: #f0f0f0 !important; }
-
-  .page-header { display: none; }
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
 }
 
 /* ── Home ─────────────────────────────────────────────────────────────────── */
