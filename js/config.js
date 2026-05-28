@@ -1,6 +1,6 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.12'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.13'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   const [vet, tambos] = await Promise.all([getVeterinario(), getTambos()]);
@@ -322,39 +322,61 @@ async function buscarActualizaciones() {
       return;
     }
 
-    await reg.update();
-
+    // Si ya hay un SW esperando activación de una vez anterior → activarlo ya
     if (reg.waiting) {
-      // Ya hay una versión nueva esperando → activarla directamente
       _mostrarModalActualizando('Instalando actualización…');
       reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      // controllerchange en index.html recarga la página → el modal queda hasta la recarga
       return;
     }
 
-    if (reg.installing) {
-      // Se está descargando ahora
+    // Registrar updatefound ANTES de llamar a reg.update().
+    // En mobile el evento puede dispararse DESPUÉS de que la Promise resuelve,
+    // por lo que no alcanza con verificar reg.installing/waiting post-await.
+    let updateDetected = false;
+
+    reg.addEventListener('updatefound', function onUpdateFound() {
+      reg.removeEventListener('updatefound', onUpdateFound);
+      updateDetected = true;
+
+      const newSW = reg.installing;
+      if (!newSW) return;
+
       _mostrarModalActualizando('Descargando actualización…');
-      reg.installing.addEventListener('statechange', function handler(e) {
-        if (e.target.state === 'installed' && reg.waiting) {
-          // Descarga terminada → activar
-          const title = document.getElementById('update-modal-title');
-          if (title) title.textContent = 'Instalando actualización…';
-          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-          e.target.removeEventListener('statechange', handler);
-        } else if (e.target.state === 'redundant') {
-          // No había cambios reales → cerrar modal y avisar
-          e.target.removeEventListener('statechange', handler);
+
+      newSW.addEventListener('statechange', function handler() {
+        if (newSW.state === 'installed') {
+          newSW.removeEventListener('statechange', handler);
+          if (reg.waiting) {
+            _mostrarModalActualizando('Instalando actualización…');
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+        } else if (newSW.state === 'redundant') {
+          newSW.removeEventListener('statechange', handler);
           const modal = document.getElementById('update-modal');
           if (modal) modal.remove();
           if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
           _showToast('✓ Ya tenés la última versión instalada.');
         }
       });
+    });
+
+    // Lanzar la comprobación
+    await reg.update();
+
+    // Pequeño margen por si en este browser updatefound llega justo después del resolve
+    await new Promise(r => setTimeout(r, 600));
+
+    // Si el listener ya tomó el control, no hacer nada más
+    if (updateDetected) return;
+
+    // También puede ocurrir que la instalación fue tan rápida que ya está en waiting
+    if (reg.waiting) {
+      _mostrarModalActualizando('Instalando actualización…');
+      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
       return;
     }
 
-    // Sin actualizaciones pendientes
+    // Sin actualización disponible
     _showToast('✓ Ya tenés la última versión instalada.');
 
   } catch (err) {
