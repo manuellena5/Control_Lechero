@@ -1,5 +1,7 @@
 /* config.js — Pantalla de configuración */
 
+const APP_VERSION = '1.11'; // Actualizar junto con CACHE en sw.js
+
 registerScreen('config', async (el) => {
   const [vet, tambos] = await Promise.all([getVeterinario(), getTambos()]);
   el.innerHTML = _configHTML(vet || {}, tambos);
@@ -91,11 +93,15 @@ function _configHTML(vet, tambos) {
       <!-- Actualizaciones -->
       <div class="card">
         <h3 class="card-title">Versión de la app</h3>
+        <div class="config-sync-row" style="margin-bottom:12px">
+          <span class="text3">Versión instalada</span>
+          <span class="mono" style="font-size:14px;font-weight:600;">${APP_VERSION}</span>
+        </div>
         <button class="btn btn-secondary btn-full" id="btn-update" onclick="buscarActualizaciones()">
           🔄 Buscar actualizaciones
         </button>
         <p class="form-hint" style="margin-top:8px">
-          Comprueba si hay una versión nueva y la instala. La app se recargará automáticamente.
+          Si hay una versión nueva se descarga e instala automáticamente.
         </p>
       </div>
 
@@ -266,6 +272,36 @@ async function forzarSync() {
   }
 }
 
+// ─── Modal bloqueante de actualización ───────────────────────────────────────
+
+function _mostrarModalActualizando(texto) {
+  // Crear si no existe
+  let modal = document.getElementById('update-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'update-modal';
+    modal.className = 'update-modal';
+    modal.innerHTML = `
+      <div class="update-modal__box">
+        <div class="update-modal__spinner"></div>
+        <div class="update-modal__title" id="update-modal-title">Actualizando…</div>
+        <div class="update-modal__sub">
+          No cerrés la app. La página se va a recargar automáticamente cuando termine.
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  // Actualizar texto si se pasa uno
+  if (texto) {
+    const title = document.getElementById('update-modal-title');
+    if (title) title.textContent = texto;
+  }
+
+  return modal;
+}
+
 // ─── Buscar actualizaciones ───────────────────────────────────────────────────
 
 async function buscarActualizaciones() {
@@ -289,24 +325,30 @@ async function buscarActualizaciones() {
     await reg.update();
 
     if (reg.waiting) {
-      // Ya hay una versión nueva esperando → activarla
+      // Ya hay una versión nueva esperando → activarla directamente
+      _mostrarModalActualizando('Instalando actualización…');
       reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      // controllerchange en index.html recargará la página
-      if (btn) btn.textContent = '⏳ Instalando…';
+      // controllerchange en index.html recarga la página → el modal queda hasta la recarga
       return;
     }
 
     if (reg.installing) {
-      // Se está descargando ahora → esperar a que quede en "waiting"
-      if (btn) btn.textContent = '⏳ Descargando…';
+      // Se está descargando ahora
+      _mostrarModalActualizando('Descargando actualización…');
       reg.installing.addEventListener('statechange', function handler(e) {
         if (e.target.state === 'installed' && reg.waiting) {
+          // Descarga terminada → activar
+          const title = document.getElementById('update-modal-title');
+          if (title) title.textContent = 'Instalando actualización…';
           reg.waiting.postMessage({ type: 'SKIP_WAITING' });
           e.target.removeEventListener('statechange', handler);
         } else if (e.target.state === 'redundant') {
+          // No había cambios reales → cerrar modal y avisar
           e.target.removeEventListener('statechange', handler);
+          const modal = document.getElementById('update-modal');
+          if (modal) modal.remove();
           if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
-          _showToast('Ya tenés la última versión instalada.');
+          _showToast('✓ Ya tenés la última versión instalada.');
         }
       });
       return;
