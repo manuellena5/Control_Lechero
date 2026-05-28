@@ -1233,11 +1233,21 @@ h3 { font-size: 15px; font-weight: 600; }
   h1 { font-size: 26px; }
   h2 { font-size: 22px; }
 
-  /* ─ Page body ─ */
+  /* ─ Page body y wrappers de pantalla: limitar ancho para no estirar ─ */
+
+  .page-body,
+  .pl-wrap,
+  .pl-body,
+  .reg-wrap,
+  .home-wrap {
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+  }
 
   .page-body {
     padding: 20px 28px;
-    max-width: 960px;
   }
 
   /* ─ Cards ─ */
