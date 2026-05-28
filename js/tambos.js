@@ -194,7 +194,6 @@ registerScreen('tambo-detalle', async (el, params) => {
       <div class="card card--info">
         <div class="info-row"><span class="text3">Propietario</span><span>${tambo.propietario}</span></div>
         ${tambo.telefono ? `<div class="info-row"><span class="text3">Teléfono</span><span>${tambo.telefono}</span></div>` : ''}
-        ${tambo.sheetId ? `<div class="info-row"><span class="text3">Sheet ID</span><span class="mono text3 truncate">${tambo.sheetId}</span></div>` : ''}
       </div>
 
       <!-- Acción principal -->
