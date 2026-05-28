@@ -2,7 +2,7 @@
 
 registerScreen('config', async (el) => {
   const [vet, tambos] = await Promise.all([getVeterinario(), getTambos()]);
-  el.innerHTML = _configHTML(vet, tambos);
+  el.innerHTML = _configHTML(vet || {}, tambos);
   updateSyncBadges();
 });
 
