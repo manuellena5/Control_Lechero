@@ -220,7 +220,7 @@ function _planillaHTML() {
           <button class="btn btn-primary btn-full btn-lg" onclick="compartirWhatsApp()">
             📱 Compartir por WhatsApp
           </button>
-          <button class="btn btn-secondary btn-full" onclick="generarPDF()">
+          <button class="btn btn-secondary btn-full" id="btn-pdf" onclick="generarPDF()">
             📄 Generar PDF
           </button>
           <button class="btn btn-secondary btn-full" onclick="sincronizarSheets()">
@@ -418,6 +418,9 @@ async function generarPDF() {
   const POR_PAG   = FILAS_COL * 2;
   const totalPags = Math.max(1, Math.ceil(vacas.length / POR_PAG));
 
+  const btn = document.getElementById('btn-pdf');
+  if (btn) { btn.textContent = '⏳ Preparando…'; btn.disabled = true; }
+
   let html = '';
   for (let p = 0; p < totalPags; p++) {
     const startIdx  = p * POR_PAG;
@@ -433,10 +436,32 @@ async function generarPDF() {
   }
   el.innerHTML = html;
 
-  // Esperar dos frames para que el browser termine el layout antes de imprimir
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  // En mobile, position:fixed + left:-10000px puede ser ignorado al imprimir
+  // porque el browser no renderiza elementos fuera del viewport.
+  // Solución: mover al viewport manualmente antes de llamar a print().
+  const appEl = document.getElementById('app');
+  if (appEl) appEl.style.display = 'none';
+  el.style.position = 'static';
+  el.style.left = '0';
+  el.style.width = '100%';
 
-  window.onafterprint = () => { el.innerHTML = ''; };
+  // Forzar recálculo de layout sincrónico
+  void el.offsetHeight;
+
+  // Doble rAF + delay para que el render del DOM termine en dispositivos lentos
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await new Promise(r => setTimeout(r, 300));
+
+  if (btn) { btn.textContent = '📄 Generar PDF'; btn.disabled = false; }
+
+  window.onafterprint = () => {
+    el.innerHTML = '';
+    el.style.position = '';
+    el.style.left = '';
+    el.style.width = '';
+    if (appEl) appEl.style.display = '';
+  };
+
   window.print();
 }
 
