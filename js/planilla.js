@@ -412,57 +412,76 @@ function _compartirTexto() {
   window.open(`https://wa.me/${tel}?text=${texto}`, '_blank');
 }
 
-async function generarPDF() {
+function generarPDF() {
   const { tambo, vet, control, vacas, stats } = _pd;
   const FILAS_COL = 40;
   const POR_PAG   = FILAS_COL * 2;
   const totalPags = Math.max(1, Math.ceil(vacas.length / POR_PAG));
 
-  const btn = document.getElementById('btn-pdf');
-  if (btn) { btn.textContent = '⏳ Preparando…'; btn.disabled = true; }
-
-  let html = '';
+  // Construir páginas de forma sincrónica (los datos ya están en _pd)
+  let pagesHtml = '';
   for (let p = 0; p < totalPags; p++) {
     const startIdx  = p * POR_PAG;
     const pageVacas = vacas.slice(startIdx, startIdx + POR_PAG);
-    html += _buildPrintPage(tambo, vet, control, pageVacas, startIdx, p + 1, totalPags, stats);
+    pagesHtml += _buildPrintPage(tambo, vet, control, pageVacas, startIdx, p + 1, totalPags, stats);
   }
 
-  let el = document.getElementById('print-layout');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'print-layout';
-    document.body.appendChild(el);
+  const [y, m, d] = control.fecha.split('-');
+  const docTitle  = `Control Lechero — ${tambo.nombre} — ${d}/${m}/${y}`;
+
+  // Abrir nueva ventana de forma sincrónica (gesto de usuario activo).
+  // Esto evita todos los problemas de timing de @media print en mobile.
+  const printWin = window.open('', '_blank');
+
+  if (printWin) {
+    printWin.document.open();
+    printWin.document.write(_buildPrintDoc(docTitle, pagesHtml));
+    printWin.document.close();
+    return;
   }
-  el.innerHTML = html;
 
-  // En mobile, position:fixed + left:-10000px puede ser ignorado al imprimir
-  // porque el browser no renderiza elementos fuera del viewport.
-  // Solución: mover al viewport manualmente antes de llamar a print().
-  const appEl = document.getElementById('app');
-  if (appEl) appEl.style.display = 'none';
-  el.style.position = 'static';
-  el.style.left = '0';
-  el.style.width = '100%';
+  // Fallback si el browser bloquea popups: descargar el HTML para imprimir desde el explorador
+  const blob = new Blob([_buildPrintDoc(docTitle, pagesHtml)], { type: 'text/html;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `control-${tambo.nombre}-${control.fecha}.html`.replace(/\s+/g, '-');
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
-  // Forzar recálculo de layout sincrónico
-  void el.offsetHeight;
-
-  // Doble rAF + delay para que el render del DOM termine en dispositivos lentos
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-  await new Promise(r => setTimeout(r, 300));
-
-  if (btn) { btn.textContent = '📄 Generar PDF'; btn.disabled = false; }
-
-  window.onafterprint = () => {
-    el.innerHTML = '';
-    el.style.position = '';
-    el.style.left = '';
-    el.style.width = '';
-    if (appEl) appEl.style.display = '';
-  };
-
-  window.print();
+function _buildPrintDoc(title, pagesHtml) {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>${title}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #fff; }
+  .print-pag { display: flex; justify-content: center; page-break-after: always; break-after: page; }
+  .print-pag:last-child { page-break-after: auto; break-after: auto; }
+  @media screen {
+    body { padding: 12px; }
+    .print-pag { overflow-x: auto; margin-bottom: 24px; }
+  }
+  @media print {
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { padding: 0; }
+    @page { size: A4 portrait; margin: 10mm; }
+  }
+</style>
+</head>
+<body>
+${pagesHtml}
+<script>
+  window.addEventListener('load', function () {
+    setTimeout(function () { window.print(); }, 400);
+  });
+<\/script>
+</body>
+</html>`;
 }
 
 function _buildPrintPage(tambo, vet, control, pageVacas, startIdx, pagNum, totalPags, stats) {
