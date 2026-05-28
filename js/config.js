@@ -1,6 +1,6 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.16'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.17'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   const [vet, tambos] = await Promise.all([getVeterinario(), getTambos()]);
