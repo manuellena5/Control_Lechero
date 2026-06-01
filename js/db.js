@@ -103,6 +103,11 @@ async function addTanda(controlId, turno) {
   return db.tandas.get(id);
 }
 
+async function deleteTanda(tandaId) {
+  await db.registros.where('tandaId').equals(tandaId).delete();
+  await db.tandas.delete(tandaId);
+}
+
 // ─── Registros ───────────────────────────────────────────────────────────────
 
 async function getRegistrosDeTanda(tandaId) {

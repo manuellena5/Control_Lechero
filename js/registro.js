@@ -22,8 +22,10 @@ const R = {
   ultimoRpWarning: null,       // RP que ya recibió advertencia (confirmar en segundo press)
 };
 
-let _pendingEliminarId = null;
-let _pendingEliminarRp = '';
+let _pendingEliminarId     = null;
+let _pendingEliminarRp     = '';
+let _pendingEliminarTandaId = null;
+let _longPressTimer         = null;
 
 // ─── Pantalla principal ───────────────────────────────────────────────────────
 
@@ -53,6 +55,7 @@ registerScreen('registro', async (el, params) => {
   _renderFull();
   _ensureBottomSheet();
   _ensureConfirmSheet();
+  _ensureConfirmTandaSheet();
 });
 
 // ─── Carga de datos ───────────────────────────────────────────────────────────
@@ -225,13 +228,27 @@ function _tandaHTML(tanda) {
 
   const expandida = esActiva || R.tandasExpandidas.has(tanda.id);
 
+  const estaVacia = regsAll.length === 0;
+
   const bodyHTML = displayRegs.length === 0
-    ? '<p class="text3" style="padding:8px 16px;font-size:13px">Tanda vacía</p>'
+    ? `<p class="text3 tanda-vacia-hint" style="padding:8px 16px;font-size:13px">
+         Tanda vacía${estaVacia ? ' · <em>Mantené presionado para eliminar</em>' : ''}
+       </p>`
     : displayRegs.map(r => _vacaRowHTML(r)).join('');
+
+  // Long-press attrs solo en tandas vacías
+  const longPressAttrs = estaVacia
+    ? `ontouchstart="_iniciarLongPressTanda(event,${tanda.id})"
+       ontouchend="_cancelarLongPressTanda()"
+       ontouchmove="_cancelarLongPressTanda()"
+       onmousedown="_iniciarLongPressTanda(event,${tanda.id})"
+       onmouseup="_cancelarLongPressTanda()"
+       onmouseleave="_cancelarLongPressTanda()"`
+    : '';
 
   if (esActiva) {
     return `
-      <div class="tanda-group tanda-group--active">
+      <div class="tanda-group tanda-group--active${estaVacia ? ' tanda-group--vacia' : ''}" ${longPressAttrs}>
         <div class="tanda-header">
           <span class="tanda-title">Tanda ${tanda.numero}</span>
           <span class="tanda-meta">
@@ -245,7 +262,7 @@ function _tandaHTML(tanda) {
   }
 
   return `
-    <div class="tanda-group">
+    <div class="tanda-group${estaVacia ? ' tanda-group--vacia' : ''}" ${longPressAttrs}>
       <div class="tanda-header tanda-header--clickable" onclick="toggleTanda(${tanda.id})">
         <span class="tanda-title">Tanda ${tanda.numero}</span>
         <span class="tanda-meta">
@@ -461,6 +478,83 @@ function _ensureConfirmSheet() {
       <div class="bs-actions">
         <button class="btn btn-secondary" onclick="_cerrarConfirmEliminar()">Cancelar</button>
         <button class="btn btn-danger" onclick="_confirmarEliminar()">Eliminar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(div);
+}
+
+// ─── Long-press + confirm eliminar tanda ─────────────────────────────────────
+
+function _iniciarLongPressTanda(event, tandaId) {
+  _cancelarLongPressTanda();
+  _longPressTimer = setTimeout(() => {
+    _longPressTimer = null;
+    const tanda = R.allTandas.find(t => t.id === tandaId);
+    if (!tanda) return;
+    pedirConfirmEliminarTanda(tandaId, tanda.numero);
+  }, 3000);
+}
+
+function _cancelarLongPressTanda() {
+  if (_longPressTimer) {
+    clearTimeout(_longPressTimer);
+    _longPressTimer = null;
+  }
+}
+
+function pedirConfirmEliminarTanda(tandaId, numero) {
+  _pendingEliminarTandaId = tandaId;
+  _ensureConfirmTandaSheet();
+  const label = document.getElementById('confirm-tanda-label');
+  if (label) label.textContent = numero;
+  document.getElementById('confirm-tanda-overlay').classList.remove('hidden');
+}
+
+function _cerrarConfirmEliminarTanda() {
+  const ov = document.getElementById('confirm-tanda-overlay');
+  if (ov) ov.classList.add('hidden');
+  _pendingEliminarTandaId = null;
+}
+
+async function _confirmarEliminarTanda() {
+  if (!_pendingEliminarTandaId) return;
+  const id = _pendingEliminarTandaId;
+  _cerrarConfirmEliminarTanda();
+
+  await deleteTanda(id);
+
+  // Actualizar estado R
+  R.allTandas = R.allTandas.filter(t => t.id !== id);
+  delete R.allRegistros[id];
+
+  // Si era la activa, reasignar
+  if (R.tandaActivaId === id) {
+    const del_turno = R.allTandas.filter(t => t.turno === R.turno);
+    R.tandaActivaId = del_turno.length > 0 ? del_turno[del_turno.length - 1].id : null;
+  }
+
+  _renderStats();
+  _renderTandas();
+  enqueueControlSync(R.controlId, R.tamboId);
+}
+
+function _ensureConfirmTandaSheet() {
+  if (document.getElementById('confirm-tanda-overlay')) return;
+  const div = document.createElement('div');
+  div.id = 'confirm-tanda-overlay';
+  div.className = 'bs-overlay hidden';
+  div.onclick = _cerrarConfirmEliminarTanda;
+  div.innerHTML = `
+    <div class="bottom-sheet" onclick="event.stopPropagation()">
+      <div class="bs-handle"></div>
+      <div class="bs-header">
+        <h3>Eliminar tanda</h3>
+        <p class="text3">¿Eliminar la Tanda <strong id="confirm-tanda-label"></strong>? Está vacía.</p>
+      </div>
+      <div class="bs-actions">
+        <button class="btn btn-secondary" onclick="_cerrarConfirmEliminarTanda()">Cancelar</button>
+        <button class="btn btn-danger" onclick="_confirmarEliminarTanda()">Eliminar</button>
       </div>
     </div>
   `;

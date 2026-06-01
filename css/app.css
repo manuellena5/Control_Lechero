@@ -661,6 +661,18 @@ h3 { font-size: 15px; font-weight: 600; }
 }
 .tanda-header--clickable:active { background: var(--surface2); }
 
+.tanda-group--vacia {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.tanda-group--vacia:active {
+  background: #FFF3CD;
+  border-color: #FFECB5;
+  transition: background 2.8s ease-in, border-color 2.8s ease-in;
+}
+.tanda-vacia-hint em { color: var(--text3); font-style: normal; }
+
 .tanda-chevron {
   flex-shrink: 0;
   transition: transform .2s;
