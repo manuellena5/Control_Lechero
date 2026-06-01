@@ -1,6 +1,6 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.22'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.23'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   const [vet, tambos] = await Promise.all([getVeterinario(), getTambos()]);
@@ -322,24 +322,23 @@ async function buscarActualizaciones() {
       return;
     }
 
-    // Si ya hay un SW esperando activación de una vez anterior → activarlo ya
+    // Si ya hay un SW esperando activación (de una vez anterior) → activarlo ya
     if (reg.waiting) {
       _mostrarModalActualizando('Instalando actualización…');
       reg.waiting.postMessage({ type: 'SKIP_WAITING' });
       return;
     }
 
-    // Registrar updatefound ANTES de llamar a reg.update().
-    // En mobile el evento puede dispararse DESPUÉS de que la Promise resuelve,
-    // por lo que no alcanza con verificar reg.installing/waiting post-await.
-    let updateDetected = false;
+    // Preparar una Promise que se resuelve cuando haya un resultado definitivo.
+    // Se registra ANTES de reg.update() porque en mobile el evento puede
+    // dispararse mientras reg.update() todavía está ejecutando.
+    let signalDone;
+    const done = new Promise(res => { signalDone = res; });
 
-    reg.addEventListener('updatefound', function onUpdateFound() {
+    function onUpdateFound() {
       reg.removeEventListener('updatefound', onUpdateFound);
-      updateDetected = true;
-
       const newSW = reg.installing;
-      if (!newSW) return;
+      if (!newSW) { signalDone('none'); return; }
 
       _mostrarModalActualizando('Descargando actualización…');
 
@@ -350,34 +349,50 @@ async function buscarActualizaciones() {
             _mostrarModalActualizando('Instalando actualización…');
             reg.waiting.postMessage({ type: 'SKIP_WAITING' });
           }
+          signalDone('installed');
         } else if (newSW.state === 'redundant') {
           newSW.removeEventListener('statechange', handler);
-          const modal = document.getElementById('update-modal');
-          if (modal) modal.remove();
-          if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
-          _showToast('✓ Ya tenés la última versión instalada.');
+          signalDone('redundant');
         }
       });
-    });
-
-    // Lanzar la comprobación
-    await reg.update();
-
-    // Pequeño margen por si en este browser updatefound llega justo después del resolve
-    await new Promise(r => setTimeout(r, 600));
-
-    // Si el listener ya tomó el control, no hacer nada más
-    if (updateDetected) return;
-
-    // También puede ocurrir que la instalación fue tan rápida que ya está en waiting
-    if (reg.waiting) {
-      _mostrarModalActualizando('Instalando actualización…');
-      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      return;
     }
 
-    // Sin actualización disponible
-    _showToast('✓ Ya tenés la última versión instalada.');
+    reg.addEventListener('updatefound', onUpdateFound);
+
+    // Lanzar la comprobación de red
+    await reg.update();
+
+    // Post-update: algunos browsers (especialmente iOS) pueden ya tener
+    // reg.installing activo sin haber disparado updatefound todavía.
+    // Si está instalando, simplemente mostrar modal y esperar.
+    if (reg.installing) {
+      _mostrarModalActualizando('Descargando actualización…');
+      // El listener onUpdateFound (o statechange) completará el flujo
+    }
+
+    // Esperar resultado con timeout generoso para conexiones móviles lentas.
+    // 600ms era insuficiente; 10s cubre la mayoría de los casos reales.
+    const result = await Promise.race([
+      done,
+      new Promise(r => setTimeout(() => r('timeout'), 10000)),
+    ]);
+
+    if (result === 'timeout') {
+      reg.removeEventListener('updatefound', onUpdateFound);
+      if (reg.waiting) {
+        _mostrarModalActualizando('Instalando actualización…');
+        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        return;
+      }
+      if (reg.installing) {
+        // Sigue descargando; el listener de statechange lo completará
+        return;
+      }
+      _showToast('✓ Ya tenés la última versión instalada.');
+    } else if (result === 'none' || result === 'redundant') {
+      _showToast('✓ Ya tenés la última versión instalada.');
+    }
+    // 'installed' → modal visible, controllerchange en index.html recargará la página
 
   } catch (err) {
     _showToast('Error al verificar: ' + err.message);
