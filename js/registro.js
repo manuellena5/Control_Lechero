@@ -372,10 +372,30 @@ async function nuevaTanda() {
 }
 
 async function eliminarDeControl(regId) {
+  // Guardar el RP antes de eliminar para poder limpiar estado de duplicado
+  let rpEliminado = null;
+  for (const regs of Object.values(R.allRegistros)) {
+    const reg = regs.find(r => r.id === regId);
+    if (reg) { rpEliminado = reg.rp; break; }
+  }
+
   await deleteRegistro(regId);
   for (const tid in R.allRegistros) {
     R.allRegistros[tid] = R.allRegistros[tid].filter(r => r.id !== regId);
   }
+
+  // Si ese RP ya no existe en ninguna tanda del turno, limpiar marca de duplicado
+  if (rpEliminado) {
+    const tandasDelTurno = R.allTandas.filter(t => t.turno === R.turno).map(t => t.id);
+    const sigueExistiendo = tandasDelTurno.some(tid =>
+      (R.allRegistros[tid] || []).some(r => r.rp === rpEliminado)
+    );
+    if (!sigueExistiendo) {
+      R.rpsDuplicados.delete(rpEliminado);
+      if (R.ultimoRpWarning === rpEliminado) R.ultimoRpWarning = null;
+    }
+  }
+
   _renderStats();
   _renderTandas();
   enqueueControlSync(R.controlId, R.tamboId);
