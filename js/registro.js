@@ -77,6 +77,8 @@ function _renderFull() {
   const turnosConTandas = [...new Set(R.allTandas.map(t => t.turno))];
   const extraTurnos = turnosConTandas.filter(t => t !== 'mañana' && t !== 'tarde');
   const allTurnos = ['mañana', 'tarde', ...extraTurnos];
+  // Incluir siempre el turno activo aunque no tenga tandas aún (turno recién creado)
+  if (!allTurnos.includes(R.turno)) allTurnos.push(R.turno);
   const turnoIconos = { mañana: '🌅', tarde: '🌇' };
   const syncClass = 'sync--pending';
   const syncLabel = '…';
