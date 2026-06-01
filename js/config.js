@@ -1,6 +1,6 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.24'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.25'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   const [vet, tambos] = await Promise.all([getVeterinario(), getTambos()]);
@@ -357,9 +357,30 @@ async function buscarActualizaciones() {
       });
     }
 
-    reg.addEventListener('updatefound', onUpdateFound);
+    // ── Pre-chequeo manual ────────────────────────────────────────────────────
+    // iOS Safari puede servir sw.js desde caché HTTP aunque reg.update() lo pida,
+    // impidiendo que updatefound se dispare. Hacemos fetch con cache:'no-store'
+    // para leer la versión real del servidor y compararla con el caché activo.
+    let hayVersionNueva = false;
+    try {
+      const res     = await fetch('./sw.js', { cache: 'no-store' });
+      const text    = await res.text();
+      const match   = text.match(/const CACHE = '(control-lechero-v\d+)'/);
+      const remoteV = match?.[1];
+      if (remoteV) {
+        const localCaches = await caches.keys();
+        hayVersionNueva   = !localCaches.includes(remoteV);
+      }
+    } catch (_) { /* sin red: continuar con método normal */ }
 
-    // Lanzar la comprobación de red
+    // Si el pre-chequeo confirma que no hay novedad, cortar ya
+    if (!hayVersionNueva && !reg.installing) {
+      _showToast('✓ Ya tenés la última versión instalada.');
+      if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
+      return;
+    }
+
+    reg.addEventListener('updatefound', onUpdateFound);
     await reg.update();
 
     // Post-update: algunos browsers (especialmente iOS) pueden ya tener
@@ -377,19 +398,23 @@ async function buscarActualizaciones() {
       new Promise(r => setTimeout(() => r('timeout'), 10000)),
     ]);
 
-    if (result === 'timeout') {
+    if (result === 'timeout' || result === 'none' || result === 'redundant') {
       reg.removeEventListener('updatefound', onUpdateFound);
       if (reg.waiting) {
         _mostrarModalActualizando('Instalando actualización…');
         reg.waiting.postMessage({ type: 'SKIP_WAITING' });
         return;
       }
-      if (reg.installing) {
-        // Sigue descargando; el listener de statechange lo completará
+      if (reg.installing) return; // sigue descargando, el listener lo completará
+
+      if (hayVersionNueva) {
+        // Pre-chequeo detectó versión nueva pero reg.update() no la procesó
+        // (bug de caché iOS). Forzamos: desregistrar el SW + recargar.
+        _mostrarModalActualizando('Instalando actualización…');
+        await reg.unregister();
+        setTimeout(() => window.location.reload(), 500);
         return;
       }
-      _showToast('✓ Ya tenés la última versión instalada.');
-    } else if (result === 'none' || result === 'redundant') {
       _showToast('✓ Ya tenés la última versión instalada.');
     }
     // 'installed' → modal visible, controllerchange en index.html recargará la página
