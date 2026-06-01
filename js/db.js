@@ -96,7 +96,9 @@ async function getTandasDeControl(controlId) {
 }
 
 async function addTanda(controlId, turno) {
-  const count = await db.tandas.where('controlId').equals(controlId).count();
+  // Numerar desde 1 dentro de cada turno (independiente de otros turnos)
+  const count = await db.tandas.where('controlId').equals(controlId)
+    .filter(t => t.turno === turno).count();
   const id = await db.tandas.add({ controlId, turno, numero: count + 1 });
   return db.tandas.get(id);
 }

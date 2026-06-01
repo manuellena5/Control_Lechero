@@ -310,8 +310,9 @@ async function agregarVaca() {
   const rp = rpInp.value.trim();
   if (!rp) { rpInp.focus(); return; }
 
-  // Validar duplicado: aviso en el primer intento, confirmar en el segundo
-  const yaExiste = Object.values(R.allRegistros).some(regs => regs.some(r => r.rp === rp));
+  // Validar duplicado solo dentro del mismo turno (distinto turno = ordeñe distinto, es normal)
+  const tandasDelTurno = R.allTandas.filter(t => t.turno === R.turno).map(t => t.id);
+  const yaExiste = tandasDelTurno.some(tid => (R.allRegistros[tid] || []).some(r => r.rp === rp));
   if (yaExiste && R.ultimoRpWarning !== rp) {
     R.ultimoRpWarning = rp;
     R.rpsDuplicados.add(rp);
