@@ -107,6 +107,13 @@ registerScreen('tambo-form', async (el, params) => {
             <span class="mono text3">docs.google.com/spreadsheets/d/<strong>[ID]</strong>/edit</span>
           </p>
         </div>
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" name="rpAlfanumerico"${tambo?.rpAlfanumerico ? ' checked' : ''}>
+            RPs alfanuméricos (letras y números)
+          </label>
+          <p class="form-helper">Activá si los RPs de este tambo contienen letras (ej: A123, VH45).</p>
+        </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="history.back()">Cancelar</button>
           <button type="submit" class="btn btn-primary">${esEdicion ? 'Guardar cambios' : 'Crear tambo'}</button>
@@ -122,10 +129,11 @@ async function guardarTambo(event, id) {
   event.preventDefault();
   const form = event.target;
   const data = {
-    nombre:      form.nombre.value.trim(),
-    propietario: form.propietario.value.trim(),
-    telefono:    form.telefono.value.trim(),
-    sheetId:     form.sheetId.value.trim() || null,
+    nombre:          form.nombre.value.trim(),
+    propietario:     form.propietario.value.trim(),
+    telefono:        form.telefono.value.trim(),
+    sheetId:         form.sheetId.value.trim() || null,
+    rpAlfanumerico:  form.rpAlfanumerico.checked,
   };
   if (id) data.id = id;
   const tamboId = await saveTambo(data);

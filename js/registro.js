@@ -10,12 +10,20 @@ const R = {
   turno: 'mañana',
   tandaActivaId: null,
   allTandas: [],
-  allRegistros: {},   // { [tandaId]: Registro[] }
+  allRegistros: {},         // { [tandaId]: Registro[] }
   padron: [],
-  estadoChip: null,   // 'venta' | 'secar' | null
+  estadoChip: null,         // 'venta' | 'secar' | null
   editRegId: null,
   bsChip: null,
+  tandasExpandidas: new Set(), // IDs de tandas no-activas expandidas manualmente
+  rpAlfanumerico: false,       // tipo de teclado para el input RP
+  busquedaRP: '',              // filtro visual de búsqueda
+  rpsDuplicados: new Set(),    // RPs con advertencia de duplicado activa
+  ultimoRpWarning: null,       // RP que ya recibió advertencia (confirmar en segundo press)
 };
+
+let _pendingEliminarId = null;
+let _pendingEliminarRp = '';
 
 // ─── Pantalla principal ───────────────────────────────────────────────────────
 
@@ -24,12 +32,17 @@ registerScreen('registro', async (el, params) => {
   R.tamboId = Number(params.tamboId);
   R.turno = 'mañana';
   R.estadoChip = null;
+  R.tandasExpandidas = new Set();
+  R.rpsDuplicados = new Set();
+  R.ultimoRpWarning = null;
+  R.busquedaRP = '';
 
   R.tambo = await getTambo(R.tamboId);
   if (!R.tambo) {
     el.innerHTML = '<div class="page-body"><p class="text2">Tambo no encontrado.</p></div>';
     return;
   }
+  R.rpAlfanumerico = R.tambo.rpAlfanumerico || false;
 
   const fecha = params.fecha || fechaHoy();
   const control = await getOrCreateControl(R.tamboId, fecha);
@@ -39,6 +52,7 @@ registerScreen('registro', async (el, params) => {
   await _regLoad();
   _renderFull();
   _ensureBottomSheet();
+  _ensureConfirmSheet();
 });
 
 // ─── Carga de datos ───────────────────────────────────────────────────────────
@@ -66,6 +80,8 @@ function _renderFull() {
   const turnoIconos = { mañana: '🌅', tarde: '🌇' };
   const syncClass = 'sync--pending';
   const syncLabel = '…';
+  const rpInputMode = R.rpAlfanumerico ? 'text' : 'numeric';
+  const rpModeLabel = R.rpAlfanumerico ? 'ABC' : '#';
 
   R.el.innerHTML = `
     <div class="reg-wrap">
@@ -94,12 +110,14 @@ function _renderFull() {
       <div class="entrada-wrap">
         <div class="entrada-row">
           <div class="rp-wrap" onfocusout="setTimeout(_hideAC, 150)">
-            <input id="inp-rp" class="inp-rp" type="text" inputmode="numeric"
-              placeholder="RP" autocomplete="off">
+            <input id="inp-rp" class="inp-rp" type="text" inputmode="${rpInputMode}"
+              placeholder="RP" autocomplete="off" enterkeyhint="next">
             <div id="ac-list" class="ac-list hidden"></div>
           </div>
+          <button id="btn-rp-mode" class="btn-rp-mode${R.rpAlfanumerico ? ' active' : ''}"
+            onclick="toggleRpMode()" title="Cambiar tipo de teclado">${rpModeLabel}</button>
           <input id="inp-litros" class="inp-litros" type="number" inputmode="decimal"
-            step="0.5" min="0" placeholder="Litros">
+            step="0.5" min="0" placeholder="Litros" enterkeyhint="done">
           <button class="btn-agregar" onclick="agregarVaca()">+</button>
         </div>
         <div class="chips-row">
@@ -108,6 +126,16 @@ function _renderFull() {
           <button id="chip-secar" class="chip chip--secar${R.estadoChip === 'secar' ? ' active' : ''}"
             onclick="toggleChip('secar')">Secar</button>
         </div>
+      </div>
+
+      <div class="busqueda-rp-wrap">
+        <svg class="lupa-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input id="inp-busqueda" class="inp-busqueda" type="text" inputmode="search"
+          placeholder="Buscar RP…" autocomplete="off"
+          value="${R.busquedaRP}"
+          oninput="_onBusquedaInput(this.value)">
       </div>
 
       <div id="tandas-list"></div>
@@ -163,33 +191,76 @@ function _renderTandas() {
     el.innerHTML = '<p class="text3 empty-turno">Sin vacas en este turno. Ingresá el primer RP arriba.</p>';
     return;
   }
-  el.innerHTML = tandasTurno.map(t => _tandaHTML(t)).join('');
+
+  // Tanda activa primero, luego el resto en orden
+  const sorted = [
+    ...tandasTurno.filter(t => t.id === R.tandaActivaId),
+    ...tandasTurno.filter(t => t.id !== R.tandaActivaId),
+  ];
+
+  const html = sorted.map(t => _tandaHTML(t)).join('');
+  el.innerHTML = html || '<p class="text3 empty-turno">Sin resultados para la búsqueda.</p>';
 }
 
 function _tandaHTML(tanda) {
-  const regs = R.allRegistros[tanda.id] || [];
-  const litros = regs.reduce((s, r) =>
-    r.estado !== 'venta' && r.estado !== 'pendiente' && r.litros != null ? s + r.litros : s, 0);
-  const pend = regs.filter(r => r.estado === 'pendiente').length;
+  const regsAll = R.allRegistros[tanda.id] || [];
   const esActiva = tanda.id === R.tandaActivaId;
 
+  // Filtrar por búsqueda (visual only, no toca R)
+  const q = R.busquedaRP.trim().toUpperCase();
+  const regs = q ? regsAll.filter(r => r.rp.toUpperCase().includes(q)) : regsAll;
+
+  // Si hay búsqueda activa y ninguna vaca coincide → ocultar tanda
+  if (q && regs.length === 0) return '';
+
+  // Stats del header basados en todos los registros (no filtrados)
+  const litros = regsAll.reduce((s, r) =>
+    r.estado !== 'venta' && r.estado !== 'pendiente' && r.litros != null ? s + r.litros : s, 0);
+  const pend = regsAll.filter(r => r.estado === 'pendiente').length;
+
+  // Tanda activa: mostrar más recientes primero
+  const displayRegs = esActiva ? [...regs].reverse() : regs;
+
+  const expandida = esActiva || R.tandasExpandidas.has(tanda.id);
+
+  const bodyHTML = displayRegs.length === 0
+    ? '<p class="text3" style="padding:8px 16px;font-size:13px">Tanda vacía</p>'
+    : displayRegs.map(r => _vacaRowHTML(r)).join('');
+
+  if (esActiva) {
+    return `
+      <div class="tanda-group tanda-group--active">
+        <div class="tanda-header">
+          <span class="tanda-title">Tanda ${tanda.numero}</span>
+          <span class="tanda-meta">
+            ${regsAll.length} vaca${regsAll.length !== 1 ? 's' : ''} · ${_fmtL(litros)} L
+            ${pend > 0 ? `<span class="badge badge--pending"> ${pend} pend.</span>` : ''}
+          </span>
+        </div>
+        <div class="tanda-body">${bodyHTML}</div>
+      </div>
+    `;
+  }
+
   return `
-    <div class="tanda-group${esActiva ? ' tanda-group--active' : ''}">
-      <div class="tanda-header">
+    <div class="tanda-group">
+      <div class="tanda-header tanda-header--clickable" onclick="toggleTanda(${tanda.id})">
         <span class="tanda-title">Tanda ${tanda.numero}</span>
         <span class="tanda-meta">
-          ${regs.length} vaca${regs.length !== 1 ? 's' : ''} · ${_fmtL(litros)} L
+          ${regsAll.length} vaca${regsAll.length !== 1 ? 's' : ''} · ${_fmtL(litros)} L
           ${pend > 0 ? `<span class="badge badge--pending"> ${pend} pend.</span>` : ''}
+          <svg class="tanda-chevron${expandida ? ' tanda-chevron--open' : ''}" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
         </span>
       </div>
-      ${regs.length === 0
-        ? '<p class="text3" style="padding:8px 16px;font-size:13px">Tanda vacía</p>'
-        : regs.map(r => _vacaRowHTML(r)).join('')}
+      <div class="tanda-body${expandida ? '' : ' tanda-body--collapsed'}">${bodyHTML}</div>
     </div>
   `;
 }
 
 function _vacaRowHTML(reg) {
+  const isDuplicate = R.rpsDuplicados.has(reg.rp);
   const badges = {
     venta:    `<span class="badge badge--venta">VENTA</span>`,
     secar:    `<span class="badge badge--secar">SECAR</span>`,
@@ -207,11 +278,11 @@ function _vacaRowHTML(reg) {
        </button>`;
 
   return `
-    <div class="vaca-row vaca-row--${reg.estado}">
-      <span class="rp-display mono">${reg.rp}</span>
+    <div class="vaca-row vaca-row--${reg.estado}${isDuplicate ? ' vaca-row--duplicado' : ''}">
+      <span class="rp-display mono">${reg.rp}${isDuplicate ? ' <span class="badge badge--duplicado">×2</span>' : ''}</span>
       ${badges[reg.estado] || badges.normal}
       <span class="vaca-litros">${litrosCell}</span>
-      <button class="btn-del" onclick="eliminarDeControl(${reg.id})" title="Eliminar">
+      <button class="btn-del" onclick="pedirConfirmEliminar(${reg.id}, '${reg.rp.replace(/'/g, "\\'")}')" title="Eliminar">
         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
@@ -232,10 +303,21 @@ function toggleChip(chip) {
 }
 
 async function agregarVaca() {
-  const rpInp    = document.getElementById('inp-rp');
+  const rpInp     = document.getElementById('inp-rp');
   const litrosInp = document.getElementById('inp-litros');
   const rp = rpInp.value.trim();
   if (!rp) { rpInp.focus(); return; }
+
+  // Validar duplicado: aviso en el primer intento, confirmar en el segundo
+  const yaExiste = Object.values(R.allRegistros).some(regs => regs.some(r => r.rp === rp));
+  if (yaExiste && R.ultimoRpWarning !== rp) {
+    R.ultimoRpWarning = rp;
+    R.rpsDuplicados.add(rp);
+    _showToast(`RP ${rp} ya está en este control. Presioná + de nuevo para confirmar.`, 'warning');
+    _renderTandas();
+    return;
+  }
+  R.ultimoRpWarning = null; // Confirmado (segundo press) o RP nuevo
 
   const litros = litrosInp.value !== '' ? parseFloat(litrosInp.value) : null;
   const estado = R.estadoChip || (litros != null ? 'normal' : 'pendiente');
@@ -302,6 +384,84 @@ function _pedirTurnoExtra() {
   R.turno = turno;
   _syncTandaActiva();
   _renderFull();
+}
+
+// ─── Toggle colapso de tanda ──────────────────────────────────────────────────
+
+function toggleTanda(tandaId) {
+  if (R.tandasExpandidas.has(tandaId)) {
+    R.tandasExpandidas.delete(tandaId);
+  } else {
+    R.tandasExpandidas.add(tandaId);
+  }
+  _renderTandas();
+}
+
+// ─── Toggle teclado RP ────────────────────────────────────────────────────────
+
+function toggleRpMode() {
+  R.rpAlfanumerico = !R.rpAlfanumerico;
+  const inp = document.getElementById('inp-rp');
+  const btn = document.getElementById('btn-rp-mode');
+  if (inp) inp.inputMode = R.rpAlfanumerico ? 'text' : 'numeric';
+  if (btn) {
+    btn.textContent = R.rpAlfanumerico ? 'ABC' : '#';
+    btn.classList.toggle('active', R.rpAlfanumerico);
+  }
+}
+
+// ─── Buscador RP ──────────────────────────────────────────────────────────────
+
+function _onBusquedaInput(val) {
+  R.busquedaRP = val;
+  _renderTandas();
+}
+
+// ─── Confirm eliminar (bottom sheet) ─────────────────────────────────────────
+
+function pedirConfirmEliminar(regId, rp) {
+  _pendingEliminarId = regId;
+  _pendingEliminarRp = rp;
+  _ensureConfirmSheet();
+  const label = document.getElementById('confirm-rp-label');
+  if (label) label.textContent = rp;
+  document.getElementById('confirm-overlay').classList.remove('hidden');
+}
+
+function _cerrarConfirmEliminar() {
+  const ov = document.getElementById('confirm-overlay');
+  if (ov) ov.classList.add('hidden');
+  _pendingEliminarId = null;
+  _pendingEliminarRp = '';
+}
+
+async function _confirmarEliminar() {
+  if (!_pendingEliminarId) return;
+  const id = _pendingEliminarId;
+  _cerrarConfirmEliminar();
+  await eliminarDeControl(id);
+}
+
+function _ensureConfirmSheet() {
+  if (document.getElementById('confirm-overlay')) return;
+  const div = document.createElement('div');
+  div.id = 'confirm-overlay';
+  div.className = 'bs-overlay hidden';
+  div.onclick = _cerrarConfirmEliminar;
+  div.innerHTML = `
+    <div class="bottom-sheet" onclick="event.stopPropagation()">
+      <div class="bs-handle"></div>
+      <div class="bs-header">
+        <h3>Eliminar vaca</h3>
+        <p class="text3">¿Eliminar RP <strong id="confirm-rp-label"></strong> de este control?</p>
+      </div>
+      <div class="bs-actions">
+        <button class="btn btn-secondary" onclick="_cerrarConfirmEliminar()">Cancelar</button>
+        <button class="btn btn-danger" onclick="_confirmarEliminar()">Eliminar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(div);
 }
 
 // ─── Autocomplete ─────────────────────────────────────────────────────────────
