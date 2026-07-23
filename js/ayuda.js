@@ -119,7 +119,7 @@ function _ayudaHTML() {
           <li>El botón <strong>＋</strong> al lado de los tags te deja crear uno nuevo al momento.</li>
         </ul>
         <p>Si una vaca queda sin litros y sin tags, aparece como <strong>pendiente</strong> (con un "?").</p>
-        <div class="ay-tip">💡 Podés crear, renombrar o borrar tags desde <strong>Config → Tags de vacas</strong>.</div>
+        <div class="ay-tip">💡 Podés crear, renombrar o deshabilitar tags desde <strong>Config → Tags de vacas</strong>. Al deshabilitar uno, deja de aparecer para asignar pero se mantiene en las vacas que ya lo tenían.</div>
       `)}
 
       ${_ayItem(_ayIcon.padron, '6. Padrón de vacas', `

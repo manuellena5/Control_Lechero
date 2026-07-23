@@ -37,9 +37,8 @@ registerScreen('registro', async (el, params) => {
   R.turno = 'mañana';
   R.tagsSel = new Set();
   await seedTagsIfEmpty();
-  R.tags = await getTags();
-  R.tagColor = {};
-  for (const t of R.tags) R.tagColor[(t.nombre || '').toLowerCase()] = t.color;
+  R.tags = await getTagsActivos();       // chips para asignar (solo habilitados)
+  R.tagColor = await getTagColorMap();   // colores de todos (incluye deshabilitados)
   R.tandasExpandidas = new Set();
   R.rpsDuplicados = new Set();
   R.ultimoRpWarning = null;
@@ -355,9 +354,8 @@ async function agregarTagRapido() {
   const nombre = prompt('Nombre del nuevo tag (ej: Tratamiento):');
   if (!nombre || !nombre.trim()) return;
   await addTag(nombre.trim());
-  R.tags = await getTags();
-  R.tagColor = {};
-  for (const t of R.tags) R.tagColor[(t.nombre || '').toLowerCase()] = t.color;
+  R.tags = await getTagsActivos();
+  R.tagColor = await getTagColorMap();
   // Seleccionar automáticamente el tag recién creado
   const creado = R.tags.find(t => t.nombre.toLowerCase() === nombre.trim().toLowerCase());
   if (creado) R.tagsSel.add(creado.nombre);
@@ -725,7 +723,15 @@ function abrirEdicion(regId) {
 function _renderBsChips() {
   const cont = document.getElementById('bs-chips');
   if (!cont) return;
-  cont.innerHTML = R.tags.map(t => {
+  // Tags habilitados + los que la vaca ya tenga aunque estén deshabilitados
+  const lista = R.tags.map(t => ({ nombre: t.nombre, color: t.color }));
+  const nombresActivos = new Set(R.tags.map(t => t.nombre));
+  for (const name of R.bsTags) {
+    if (!nombresActivos.has(name)) {
+      lista.push({ nombre: name, color: R.tagColor[name.toLowerCase()] || '#888888' });
+    }
+  }
+  cont.innerHTML = lista.map(t => {
     const active = R.bsTags.has(t.nombre);
     return `<button class="chip" style="${_tagChipStyle(t.color, active)}"
       onclick="bsToggleChip('${t.nombre.replace(/'/g, "\\'")}')">${t.nombre}</button>`;

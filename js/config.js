@@ -1,6 +1,6 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.30'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.31'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   await seedTagsIfEmpty();
@@ -59,13 +59,17 @@ function _configHTML(vet, tambos, tags) {
           No afectan los litros, son una marca visual.
         </p>
         <div class="tag-admin-list">
-          ${tags.map(t => `
-            <div class="tag-admin-row">
+          ${tags.map(t => {
+            const off = t.activo === 0;
+            const esc = t.nombre.replace(/'/g, "\\'");
+            return `
+            <div class="tag-admin-row${off ? ' tag-admin-row--off' : ''}">
               <span class="tag-admin-dot" style="background:${t.color}"></span>
-              <span class="tag-admin-name">${t.nombre}</span>
-              <button class="btn-tag-edit" onclick="cfgRenombrarTag(${t.id}, '${t.nombre.replace(/'/g, "\\'")}')" title="Renombrar">✎</button>
-              <button class="btn-tag-del" onclick="cfgEliminarTag(${t.id}, '${t.nombre.replace(/'/g, "\\'")}')" title="Eliminar">✕</button>
-            </div>`).join('')}
+              <span class="tag-admin-name">${t.nombre}${off ? ' <span class="tag-off-lbl">(deshabilitado)</span>' : ''}</span>
+              <button class="btn-tag-edit" onclick="cfgRenombrarTag(${t.id}, '${esc}')" title="Renombrar">✎</button>
+              <button class="btn-tag-toggle" onclick="cfgToggleTag(${t.id}, ${off ? 1 : 0})">${off ? 'Habilitar' : 'Deshabilitar'}</button>
+            </div>`;
+          }).join('')}
         </div>
         <div class="tag-admin-add">
           <input class="form-input" id="tag-nuevo" type="text" placeholder="Nuevo tag (ej: Tratamiento)"
@@ -187,10 +191,16 @@ async function cfgAgregarTag() {
   const inp = document.getElementById('tag-nuevo');
   const nombre = (inp?.value || '').trim();
   if (!nombre) { inp?.focus(); return; }
+  const btn = document.querySelector('[onclick="cfgAgregarTag()"]');
+  if (btn) btn.disabled = true;
   const existe = await getTagByNombre(nombre);
-  if (existe) { alert('Ya existe un tag con ese nombre.'); return; }
-  await addTag(nombre);
-  navigate('/config');
+  if (existe && existe.activo !== 0) {
+    if (btn) btn.disabled = false;
+    alert('Ya existe un tag con ese nombre.');
+    return;
+  }
+  await addTag(nombre); // si existía deshabilitado, lo re-habilita
+  refresh();
 }
 
 async function cfgRenombrarTag(id, nombreActual) {
@@ -201,16 +211,12 @@ async function cfgRenombrarTag(id, nombreActual) {
   const existe = await getTagByNombre(nombre);
   if (existe && existe.id !== id) { alert('Ya existe otro tag con ese nombre.'); return; }
   await updateTagNombre(id, nombre);
-  navigate('/config');
+  refresh();
 }
 
-async function cfgEliminarTag(id, nombre) {
-  if (!confirm(
-    `¿Eliminar el tag "${nombre}"?\n\n` +
-    `Se va a quitar de todas las vacas que lo tuvieran. Esta acción no se puede deshacer.`
-  )) return;
-  await deleteTag(id);
-  navigate('/config');
+async function cfgToggleTag(id, activo) {
+  await setTagActivo(id, activo);
+  refresh();
 }
 
 async function _buscarTambosEnScript(url) {

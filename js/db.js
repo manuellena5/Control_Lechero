@@ -55,18 +55,50 @@ db.version(2).stores({
 // Colores automáticos para tags nuevos (evitan chocar con mañana/tarde/accent).
 const TAG_PALETTE = ['#3A86C8', '#C47B2A', '#2D9E75', '#C0392B', '#D4537E', '#0E7C7B', '#8E44AD', '#B8860B'];
 
-async function seedTagsIfEmpty() {
-  const n = await db.tags.count();
-  if (n === 0) {
-    await db.tags.bulkAdd([
-      { nombre: 'Venta', color: '#E76F51', orden: 0, builtin: 1 },
-      { nombre: 'Secar', color: '#7B5EA7', orden: 1, builtin: 1 },
-    ]);
-  }
+// Guard para que múltiples llamadas concurrentes (init + pantallas) no dupliquen
+let _seedTagsPromise = null;
+function seedTagsIfEmpty() {
+  if (!_seedTagsPromise) _seedTagsPromise = _seedTags();
+  return _seedTagsPromise;
+}
+
+async function _seedTags() {
+  // Transacción rw: el chequeo + alta es atómico (IndexedDB serializa las
+  // transacciones rw sobre la misma tabla), así no se crean tags duplicados.
+  await db.transaction('rw', db.tags, async () => {
+    const all = await db.tags.toArray();
+
+    if (all.length === 0) {
+      await db.tags.bulkAdd([
+        { nombre: 'Venta', color: '#E76F51', orden: 0, builtin: 1, activo: 1 },
+        { nombre: 'Secar', color: '#7B5EA7', orden: 1, builtin: 1, activo: 1 },
+      ]);
+      return;
+    }
+
+    // Limpiar duplicados por nombre (de versiones con el bug de seed concurrente)
+    const vistos = new Set();
+    const aBorrar = [];
+    for (const t of all.sort((a, b) => a.id - b.id)) {
+      const key = (t.nombre || '').toLowerCase();
+      if (vistos.has(key)) aBorrar.push(t.id);
+      else vistos.add(key);
+    }
+    if (aBorrar.length) await db.tags.bulkDelete(aBorrar);
+
+    // Tags viejos sin el campo `activo` → activarlos
+    await db.tags.toCollection().modify(t => { if (t.activo === undefined) t.activo = 1; });
+  });
 }
 
 async function getTags() {
   return db.tags.orderBy('orden').toArray();
+}
+
+// Solo tags habilitados (para asignar en el control)
+async function getTagsActivos() {
+  const all = await db.tags.orderBy('orden').toArray();
+  return all.filter(t => t.activo !== 0);
 }
 
 async function getTagByNombre(nombre) {
@@ -86,11 +118,15 @@ async function addTag(nombre) {
   nombre = (nombre || '').trim();
   if (!nombre) return null;
   const existe = await getTagByNombre(nombre);
-  if (existe) return existe.id;
+  if (existe) {
+    // Si existía pero estaba deshabilitado, re-habilitarlo
+    if (existe.activo === 0) await db.tags.update(existe.id, { activo: 1 });
+    return existe.id;
+  }
   const all = await db.tags.toArray();
   const color = TAG_PALETTE[Math.max(0, all.length - 2) % TAG_PALETTE.length];
   const orden = all.length ? Math.max(...all.map(t => t.orden || 0)) + 1 : 0;
-  return db.tags.add({ nombre, color, orden, builtin: 0 });
+  return db.tags.add({ nombre, color, orden, builtin: 0, activo: 1 });
 }
 
 async function updateTagNombre(id, nombre) {
@@ -110,17 +146,10 @@ async function updateTagNombre(id, nombre) {
   });
 }
 
-async function deleteTag(id) {
-  const tag = await db.tags.get(id);
-  if (!tag) return;
-  await db.tags.delete(id);
-  // Cascada: quitar el tag de los registros que lo tuvieran
-  await db.registros.toCollection().modify(r => {
-    if (Array.isArray(r.tags)) {
-      const i = r.tags.indexOf(tag.nombre);
-      if (i !== -1) r.tags.splice(i, 1);
-    }
-  });
+// Deshabilitar / habilitar un tag. No se borra ni se quita de las vacas que ya
+// lo tienen: solo deja de aparecer como opción para asignar en nuevos controles.
+async function setTagActivo(id, activo) {
+  await db.tags.update(id, { activo: activo ? 1 : 0 });
 }
 
 // Tags de un registro, con compatibilidad hacia registros antiguos (campo estado).
