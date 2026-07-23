@@ -1,6 +1,6 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.26'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.27'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   const [vet, tambos] = await Promise.all([getVeterinario(), getTambos()]);
@@ -32,6 +32,12 @@ function _configHTML(vet, tambos) {
             <label class="form-label">Matrícula</label>
             <input class="form-input" id="vet-matricula" type="text" placeholder="Ej: 1234"
               value="${vet.matricula || ''}" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Teléfono</label>
+            <input class="form-input" id="vet-telefono" type="tel" placeholder="Ej: 351 1234567"
+              value="${vet.telefono || ''}" autocomplete="off">
+            <span class="form-hint">Aparecerá en los reportes junto al nombre y la matrícula.</span>
           </div>
           <div class="form-group">
             <label class="form-label">URL de Apps Script</label>
@@ -132,12 +138,13 @@ async function guardarVeterinario(e) {
   e.preventDefault();
   const nombre    = document.getElementById('vet-nombre').value.trim();
   const matricula = document.getElementById('vet-matricula').value.trim();
+  const telefono  = document.getElementById('vet-telefono').value.trim();
   const url       = document.getElementById('vet-url').value.trim();
 
   const vetAnterior = await getVeterinario();
   const urlCambio   = url && url !== (vetAnterior?.appsScriptUrl || '');
 
-  await saveVeterinario({ id: 1, nombre, matricula, appsScriptUrl: url });
+  await saveVeterinario({ id: 1, nombre, matricula, telefono, appsScriptUrl: url });
 
   const btn = e.target.querySelector('button[type="submit"]');
   btn.textContent = '✓ Guardado';

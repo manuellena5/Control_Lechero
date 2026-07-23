@@ -1267,6 +1267,10 @@ h3 { font-size: 15px; font-weight: 600; }
     transform: none;
     z-index: auto;
 
+    /* Ubicar el sidebar a la izquierda del contenido
+       (en el DOM #app-content va antes que #bottom-nav) */
+    order: -1;
+
     /* Sidebar vertical */
     flex-direction: column;
     align-items: stretch;

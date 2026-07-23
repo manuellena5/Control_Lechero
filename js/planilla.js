@@ -113,7 +113,7 @@ function _planillaHTML() {
     </tr>`;
   }).join('');
 
-  const vetLinea = vet ? `${vet.nombre}${vet.matricula ? ' — Mat. ' + vet.matricula : ''}` : '';
+  const vetLinea = vet ? `${vet.nombre}${vet.matricula ? ' — Mat. ' + vet.matricula : ''}${vet.telefono ? ' — Tel. ' + vet.telefono : ''}` : '';
 
   return `
     <div class="pl-wrap">
@@ -142,6 +142,7 @@ function _planillaHTML() {
           <div class="info-row"><span class="text3">Fecha</span><span>${formatFecha(control.fecha)}</span></div>
           ${vet ? `<div class="info-row"><span class="text3">Veterinario</span><span>${vet.nombre}</span></div>` : ''}
           ${vet?.matricula ? `<div class="info-row"><span class="text3">Matrícula</span><span>${vet.matricula}</span></div>` : ''}
+          ${vet?.telefono ? `<div class="info-row"><span class="text3">Teléfono</span><span>${vet.telefono}</span></div>` : ''}
         </div>
 
         <!-- Card resumen -->
@@ -308,7 +309,7 @@ function _buildPagHTML(tambo, vet, control, pageVacas, startIdx, pagNum, totalPa
   const isLast = pagNum === totalPags;
 
   const [y, m, d] = control.fecha.split('-');
-  const vetLinea  = vet ? `${vet.nombre}${vet.matricula ? '   Mat. ' + vet.matricula : ''}` : '';
+  const vetLinea  = vet ? `${vet.nombre}${vet.matricula ? '   Mat. ' + vet.matricula : ''}${vet.telefono ? '   Tel. ' + vet.telefono : ''}` : '';
 
   const TH = 'padding:4px 3px;background:#2D6A4F;color:#fff;font-weight:700;font-size:10.5px;text-align:center;border:1px solid #1a5c3a;';
   const TD = 'padding:3px 4px;font-size:11px;border:1px solid #ddd;text-align:center;';
@@ -405,7 +406,7 @@ function _compartirTexto() {
   if (stats.cantSecar > 0)     lineas.push(`🔵 A secar: ${stats.cantSecar}`);
   if (stats.cantVenta > 0)     lineas.push(`🟠 A venta: ${stats.cantVenta}`);
   if (stats.cantPendiente > 0) lineas.push(`⏳ Pendientes: ${stats.cantPendiente}`);
-  if (vet) lineas.push(``, `_${vet.nombre}${vet.matricula ? ' — Mat. ' + vet.matricula : ''}_`);
+  if (vet) lineas.push(``, `_${vet.nombre}${vet.matricula ? ' — Mat. ' + vet.matricula : ''}${vet.telefono ? ' — Tel. ' + vet.telefono : ''}_`);
 
   const texto = encodeURIComponent(lineas.join('\n'));
   const tel   = tambo.telefono ? tambo.telefono.replace(/\D/g, '') : '';
@@ -492,7 +493,7 @@ function _buildPrintPage(tambo, vet, control, pageVacas, startIdx, pagNum, total
   const isLast = pagNum === totalPags;
 
   const [y, m, d] = control.fecha.split('-');
-  const vetLinea  = vet ? `${vet.nombre}${vet.matricula ? ' — Mat. ' + vet.matricula : ''}` : '';
+  const vetLinea  = vet ? `${vet.nombre}${vet.matricula ? ' — Mat. ' + vet.matricula : ''}${vet.telefono ? ' — Tel. ' + vet.telefono : ''}` : '';
 
   const TH  = 'padding:2pt 3pt;background:#2D6A4F;color:#fff;font-weight:700;font-size:8pt;text-align:center;border:0.5pt solid #1a5c3a;';
   const TD  = 'padding:2pt 3pt;font-size:8.5pt;border:0.5pt solid #ddd;text-align:center;';

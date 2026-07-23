@@ -132,6 +132,7 @@ async function _buildPayload(controlId, tamboId) {
         propietario: tambo.propietario,
         veterinario: vet.nombre    || '',
         matricula:   vet.matricula || '',
+        telefono:    vet.telefono  || '',
       },
       registros,
     },

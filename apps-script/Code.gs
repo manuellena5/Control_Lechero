@@ -33,12 +33,13 @@ function doPost(e) {
         .setFontSize(13)
         .setBackground('#D8EFDF');
 
-    const metaLabels = ['Propietario', 'Fecha', 'Veterinario', 'Matrícula'];
+    const metaLabels = ['Propietario', 'Fecha', 'Veterinario', 'Matrícula', 'Teléfono'];
     const metaValues = [
       data.control.propietario,
       data.control.fecha,
       data.control.veterinario,
       data.control.matricula,
+      data.control.telefono || '',
     ];
     for (let i = 0; i < metaLabels.length; i++) {
       hoja.getRange(i + 2, 1).setValue(metaLabels[i] + ':').setFontWeight('bold').setFontColor('#6B6560');
@@ -260,6 +261,7 @@ function testDoPost() {
       propietario: 'Juan Pérez',
       veterinario: 'Dr. Test',
       matricula: '1234',
+      telefono: '351 1234567',
     },
     registros: [
       { rp: '1001', litrosMañana: 15, litrosTarde: 12, total: 27, estado: 'normal', tanda: 1 },
