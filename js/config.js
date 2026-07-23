@@ -1,6 +1,6 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.28'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.29'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   const [vet, tambos] = await Promise.all([getVeterinario(), getTambos()]);
@@ -313,6 +313,9 @@ function _mostrarModalActualizando(texto) {
 
 async function buscarActualizaciones() {
   const btn = document.getElementById('btn-update');
+  const restaurarBtn = () => {
+    if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
+  };
 
   if (!('serviceWorker' in navigator)) {
     alert('Tu browser no soporta Service Workers. Abrí la app desde su URL en GitHub Pages.');
@@ -321,116 +324,40 @@ async function buscarActualizaciones() {
 
   if (btn) { btn.textContent = '⏳ Verificando…'; btn.disabled = true; }
 
+  // 1. Leer la versión publicada en el servidor, sin pasar por la caché HTTP.
+  let remoteV = null;
   try {
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (!reg) {
-      _showToast('No hay Service Worker registrado.');
-      if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
-      return;
-    }
-
-    // Si ya hay un SW esperando activación (de una vez anterior) → activarlo ya
-    if (reg.waiting) {
-      _mostrarModalActualizando('Instalando actualización…');
-      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      return;
-    }
-
-    // Preparar una Promise que se resuelve cuando haya un resultado definitivo.
-    // Se registra ANTES de reg.update() porque en mobile el evento puede
-    // dispararse mientras reg.update() todavía está ejecutando.
-    let signalDone;
-    const done = new Promise(res => { signalDone = res; });
-
-    function onUpdateFound() {
-      reg.removeEventListener('updatefound', onUpdateFound);
-      const newSW = reg.installing;
-      if (!newSW) { signalDone('none'); return; }
-
-      _mostrarModalActualizando('Descargando actualización…');
-
-      newSW.addEventListener('statechange', function handler() {
-        if (newSW.state === 'installed') {
-          newSW.removeEventListener('statechange', handler);
-          if (reg.waiting) {
-            _mostrarModalActualizando('Instalando actualización…');
-            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-          }
-          signalDone('installed');
-        } else if (newSW.state === 'redundant') {
-          newSW.removeEventListener('statechange', handler);
-          signalDone('redundant');
-        }
-      });
-    }
-
-    // ── Pre-chequeo manual ────────────────────────────────────────────────────
-    // iOS Safari puede servir sw.js desde caché HTTP aunque reg.update() lo pida,
-    // impidiendo que updatefound se dispare. Hacemos fetch con cache:'no-store'
-    // para leer la versión real del servidor y compararla con el caché activo.
-    let hayVersionNueva = false;
-    try {
-      const res     = await fetch('./sw.js', { cache: 'no-store' });
-      const text    = await res.text();
-      const match   = text.match(/const CACHE = '(control-lechero-v\d+)'/);
-      const remoteV = match?.[1];
-      if (remoteV) {
-        const localCaches = await caches.keys();
-        hayVersionNueva   = !localCaches.includes(remoteV);
-      }
-    } catch (_) { /* sin red: continuar con método normal */ }
-
-    // Si el pre-chequeo confirma que no hay novedad, cortar ya
-    if (!hayVersionNueva && !reg.installing) {
-      _showToast('✓ Ya tenés la última versión instalada.');
-      if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
-      return;
-    }
-
-    reg.addEventListener('updatefound', onUpdateFound);
-    await reg.update();
-
-    // Post-update: algunos browsers (especialmente iOS) pueden ya tener
-    // reg.installing activo sin haber disparado updatefound todavía.
-    // Si está instalando, simplemente mostrar modal y esperar.
-    if (reg.installing) {
-      _mostrarModalActualizando('Descargando actualización…');
-      // El listener onUpdateFound (o statechange) completará el flujo
-    }
-
-    // Esperar resultado con timeout generoso para conexiones móviles lentas.
-    // 600ms era insuficiente; 10s cubre la mayoría de los casos reales.
-    const result = await Promise.race([
-      done,
-      new Promise(r => setTimeout(() => r('timeout'), 10000)),
-    ]);
-
-    if (result === 'timeout' || result === 'none' || result === 'redundant') {
-      reg.removeEventListener('updatefound', onUpdateFound);
-      if (reg.waiting) {
-        _mostrarModalActualizando('Instalando actualización…');
-        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-        return;
-      }
-      if (reg.installing) return; // sigue descargando, el listener lo completará
-
-      if (hayVersionNueva) {
-        // Pre-chequeo detectó versión nueva pero reg.update() no la procesó
-        // (bug de caché iOS). Forzamos: desregistrar el SW + recargar.
-        _mostrarModalActualizando('Instalando actualización…');
-        await reg.unregister();
-        setTimeout(() => window.location.reload(), 500);
-        return;
-      }
-      _showToast('✓ Ya tenés la última versión instalada.');
-    }
-    // 'installed' → modal visible, controllerchange en index.html recargará la página
-
-  } catch (err) {
-    _showToast('Error al verificar: ' + err.message);
+    const res  = await fetch('./sw.js', { cache: 'no-store' });
+    const text = await res.text();
+    remoteV = text.match(/const CACHE = '(control-lechero-v\d+)'/)?.[1] || null;
+  } catch (_) {
+    _showToast('Sin conexión. Conectate a internet para actualizar.');
+    restaurarBtn();
+    return;
   }
 
-  if (btn) { btn.textContent = '🔄 Buscar actualizaciones'; btn.disabled = false; }
+  // 2. Compararla con lo que ya está instalado en este dispositivo.
+  const localCaches = await caches.keys();
+  const hayVersionNueva = remoteV && !localCaches.includes(remoteV);
+
+  if (!hayVersionNueva) {
+    _showToast('✓ Ya tenés la última versión instalada.');
+    restaurarBtn();
+    return;
+  }
+
+  // 3. Hay versión nueva → forzar la actualización de la forma más directa:
+  //    borrar la caché vieja, desregistrar el Service Worker y recargar.
+  //    Al recargar, la app baja los archivos nuevos desde la red y el SW se
+  //    vuelve a registrar con la versión publicada. Sin esperar eventos del
+  //    ciclo de vida del SW (que en mobile pueden tardar o no dispararse).
+  _mostrarModalActualizando('Instalando actualización…');
+  try {
+    await Promise.all(localCaches.map(k => caches.delete(k)));
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) await reg.unregister();
+  } catch (_) { /* la recarga resuelve igual */ }
+  setTimeout(() => window.location.reload(), 300);
 }
 
 // ─── Pull por tambo desde Config ─────────────────────────────────────────────

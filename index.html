@@ -63,12 +63,16 @@
 
   <script>
     if ('serviceWorker' in navigator && location.protocol !== 'null:' && location.hostname !== '') {
+      // ¿Había un SW controlando la página al cargar? Si no lo había (por ej.
+      // tras una instalación limpia desde "Buscar actualizaciones"), no hace
+      // falta recargar cuando el SW nuevo tome control: la página ya está fresca.
+      const _habiaSW = !!navigator.serviceWorker.controller;
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js');
       });
-      // Recargar automáticamente cuando el SW nuevo tome control
+      // Recargar automáticamente cuando un SW nuevo reemplaza a uno anterior
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        window.location.reload();
+        if (_habiaSW) window.location.reload();
       });
     }
     initSync();
