@@ -62,29 +62,25 @@ function doPost(e) {
       const r   = regs[i];
       const row = FILA_HEADER + 1 + i;
 
-      if (r.estado === 'venta') {
-        hoja.getRange(row, 1, 1, 5)
-            .setValues([[i + 1, r.rp, 'VENTA', 'VENTA', 'VENTA']])
-            .setBackground('#FDEBD6')
-            .setFontColor('#E76F51');
-      } else {
-        const mañana = r.litrosMañana != null ? r.litrosMañana : '';
-        const tarde  = r.litrosTarde  != null ? r.litrosTarde  : '';
-        const total  = r.total        != null ? r.total        : '';
-        const rpLabel = r.estado === 'secar' ? r.rp + ' ★' : r.rp;
+      // Tags (compatibilidad con payloads viejos que traían `estado`)
+      const tags = Array.isArray(r.tags) ? r.tags
+                 : (r.estado === 'secar' ? ['Secar'] : r.estado === 'venta' ? ['Venta'] : []);
 
-        hoja.getRange(row, 1, 1, 5).setValues([[i + 1, rpLabel, mañana, tarde, total]]);
+      const mañana = r.litrosMañana != null ? r.litrosMañana : '';
+      const tarde  = r.litrosTarde  != null ? r.litrosTarde  : '';
+      const total  = r.total        != null ? r.total        : '';
+      const rpLabel = tags.length ? r.rp + ' — ' + tags.join(', ') : r.rp;
 
-        if (r.estado === 'secar') {
-          hoja.getRange(row, 1, 1, 5).setBackground('#EDE6F7');
-        }
+      hoja.getRange(row, 1, 1, 5).setValues([[i + 1, rpLabel, mañana, tarde, total]]);
 
-        if (r.estado !== 'pendiente') {
-          totalMañana += r.litrosMañana || 0;
-          totalTarde  += r.litrosTarde  || 0;
-          totalDia    += r.total        || 0;
-        }
+      if (tags.length) {
+        hoja.getRange(row, 1, 1, 5).setBackground('#F0EAF7');
       }
+
+      // El total cuenta cualquier vaca con litros cargados
+      totalMañana += r.litrosMañana || 0;
+      totalTarde  += r.litrosTarde  || 0;
+      totalDia    += r.total        || 0;
 
       // Borde inferior suave en cada fila
       hoja.getRange(row, 1, 1, 5)
@@ -224,7 +220,8 @@ function _actualizarDatos(ss, data) {
         rp:           r.rp,
         litrosMañana: r.litrosMañana,
         litrosTarde:  r.litrosTarde,
-        estado:       r.estado,
+        tags:         Array.isArray(r.tags) ? r.tags
+                    : (r.estado === 'secar' ? ['Secar'] : r.estado === 'venta' ? ['Venta'] : []),
       };
     }),
   };
@@ -264,9 +261,9 @@ function testDoPost() {
       telefono: '351 1234567',
     },
     registros: [
-      { rp: '1001', litrosMañana: 15, litrosTarde: 12, total: 27, estado: 'normal', tanda: 1 },
-      { rp: '1002', litrosMañana: 18, litrosTarde: 14, total: 32, estado: 'secar',  tanda: 1 },
-      { rp: '1003', litrosMañana: null, litrosTarde: null, total: null, estado: 'venta', tanda: 1 },
+      { rp: '1001', litrosMañana: 15, litrosTarde: 12, total: 27, tags: [], tanda: 1 },
+      { rp: '1002', litrosMañana: 18, litrosTarde: 14, total: 32, tags: ['Secar'], tanda: 1 },
+      { rp: '1003', litrosMañana: null, litrosTarde: null, total: null, tags: ['Venta'], tanda: 1 },
     ],
   };
   const e = { postData: { contents: JSON.stringify(payload) } };

@@ -105,20 +105,21 @@ function _ayudaHTML() {
         <div class="ay-tip">💡 Si son muchas vacas podés dividirlas en “tandas” (grupos), pero no es obligatorio.</div>
       `)}
 
-      ${_ayItem(_ayIcon.vaca, '5. Estados de cada vaca', `
-        <p>Cada vaca puede tener un estado, marcado con un color:</p>
+      ${_ayItem(_ayIcon.vaca, '5. Tags (etiquetas) de las vacas', `
+        <p>A cada vaca le podés poner uno o varios <strong>tags</strong> para marcarla. La app viene con dos:</p>
         <div class="ay-chips">
-          <span class="ay-chip ay-chip--normal">Normal</span>
-          <span class="ay-chip ay-chip--pend">Pendiente</span>
-          <span class="ay-chip ay-chip--secar">Secar</span>
           <span class="ay-chip ay-chip--venta">Venta</span>
+          <span class="ay-chip ay-chip--secar">Secar</span>
         </div>
+        <p>Los tags son solo una <strong>marca visual</strong>: no cambian los litros ni el total,
+        la vaca sigue sumando su leche normalmente.</p>
         <ul class="ay-list">
-          <li><strong>Normal</strong>: vaca en ordeñe, con sus litros cargados.</li>
-          <li><strong>Pendiente</strong>: está en el control pero todavía no le tomaste los litros.</li>
-          <li><strong>Secar</strong>: vaca marcada para dejar de ordeñar pronto.</li>
-          <li><strong>Venta</strong>: vaca que se vendió (no suma litros).</li>
+          <li>En la pantalla de control, tocá el tag antes de cargar la vaca para asignárselo.</li>
+          <li>Podés poner <strong>más de un tag</strong> a la misma vaca.</li>
+          <li>El botón <strong>＋</strong> al lado de los tags te deja crear uno nuevo al momento.</li>
         </ul>
+        <p>Si una vaca queda sin litros y sin tags, aparece como <strong>pendiente</strong> (con un "?").</p>
+        <div class="ay-tip">💡 Podés crear, renombrar o borrar tags desde <strong>Config → Tags de vacas</strong>.</div>
       `)}
 
       ${_ayItem(_ayIcon.padron, '6. Padrón de vacas', `

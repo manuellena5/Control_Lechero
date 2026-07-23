@@ -69,9 +69,11 @@ registerScreen('historial-vaca', async (el, params) => {
   const tamboId = Number(params.tamboId);
   const rp = params.rp;
 
-  const [tambo, entradas] = await Promise.all([
+  await seedTagsIfEmpty();
+  const [tambo, entradas, tagColor] = await Promise.all([
     getTambo(tamboId),
     getHistorialVaca(tamboId, rp),
+    getTagColorMap(),
   ]);
 
   if (!tambo) {
@@ -129,24 +131,24 @@ registerScreen('historial-vaca', async (el, params) => {
               </thead>
               <tbody>
                 ${porFecha.map(e => {
-                  const cls = e.estado === 'secar' ? 'fila-secar'
-                            : e.estado === 'venta' ? 'fila-venta' : '';
-                  const mañana = e.estado === 'venta' ? '—'
-                               : e.hasMañana ? fmtL(e.litrosMañana) : '—';
-                  const tarde  = e.estado === 'venta' ? '—'
-                               : e.hasTarde  ? fmtL(e.litrosTarde)  : '—';
-                  const total  = e.estado === 'venta' ? '—' : fmtL(e.total);
-                  const estadoBadge =
-                      e.estado === 'secar'    ? `<span class="badge badge--secar">SECAR</span>`
-                    : e.estado === 'venta'    ? `<span class="badge badge--venta">VENTA</span>`
-                    : e.estado === 'pendiente'? `<span class="badge badge--pending">Pend.</span>`
+                  const sinLitros = !e.hasMañana && !e.hasTarde;
+                  const esPend = sinLitros && e.tags.length === 0;
+                  const mañana = e.hasMañana ? fmtL(e.litrosMañana) : (esPend ? '?' : '—');
+                  const tarde  = e.hasTarde  ? fmtL(e.litrosTarde)  : (esPend ? '?' : '—');
+                  const total  = esPend ? '?' : (sinLitros ? '—' : fmtL(e.total));
+                  const rowStyle = e.tags.length
+                    ? ` style="background:${_hexToRgba(tagColor[e.tags[0].toLowerCase()] || '#888888', 0.10)}"`
                     : '';
-                  return `<tr class="${cls}">
+                  const tagBadges = e.tags.map(name => {
+                    const color = tagColor[name.toLowerCase()] || '#888888';
+                    return `<span class="badge" style="background:${color};color:#fff">${name}</span>`;
+                  }).join(' ');
+                  return `<tr${rowStyle}>
                     <td style="text-align:left;white-space:nowrap">${formatFecha(e.fecha)}</td>
                     <td>${mañana}</td>
                     <td>${tarde}</td>
                     <td><strong>${total}</strong></td>
-                    <td>${estadoBadge}</td>
+                    <td>${tagBadges}</td>
                   </tr>`;
                 }).join('')}
               </tbody>
@@ -168,14 +170,14 @@ function _agruparPorFecha(entradas) {
         litrosMañana: 0, hasMañana: false,
         litrosTarde:  0, hasTarde:  false,
         total: 0,
-        estado: 'normal',
+        tags: [],
       });
     }
     const d = map.get(e.fecha);
 
-    if (e.estado === 'venta')                            d.estado = 'venta';
-    else if (e.estado === 'secar' && d.estado !== 'venta')   d.estado = 'secar';
-    else if (e.estado === 'pendiente' && d.estado === 'normal') d.estado = 'pendiente';
+    for (const name of (e.tags || [])) {
+      if (!d.tags.includes(name)) d.tags.push(name);
+    }
 
     if (e.turno === 'mañana') { d.hasMañana = true; d.litrosMañana += (e.litros || 0); }
     else if (e.turno === 'tarde') { d.hasTarde = true; d.litrosTarde += (e.litros || 0); }
@@ -187,7 +189,7 @@ function _agruparPorFecha(entradas) {
 }
 
 function _calcHistStats(porFecha) {
-  const productivas = porFecha.filter(e => e.estado !== 'venta' && e.estado !== 'pendiente' && e.total > 0);
+  const productivas = porFecha.filter(e => e.total > 0);
   const ultimas = productivas.slice(0, 4);
 
   const promedio4 = ultimas.length >= 1

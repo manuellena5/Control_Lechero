@@ -19,10 +19,12 @@ registerScreen('planilla', async (el, params) => {
     return;
   }
 
+  await seedTagsIfEmpty();
+  const tagColor = await getTagColorMap();
   const tandas = await getTandasDeControl(controlId);
   const vacas  = await _buildVacaData(tandas);
   const stats  = _calcStats(vacas);
-  _pd = { tambo, vet, control, vacas, stats, tamboId, controlId };
+  _pd = { tambo, vet, control, vacas, stats, tamboId, controlId, tagColor };
 
   el.innerHTML = _planillaHTML();
 });
@@ -41,15 +43,15 @@ async function _buildVacaData(tandas) {
           litrosMañana: 0, hasMañana: false,
           litrosTarde:  0, hasTarde: false,
           litrosExtra: {}, hasExtra: {},
-          estado: 'normal',
+          tags: [],
         });
       }
       const v = map.get(reg.rp);
 
-      // Estado: venta > secar > pendiente > normal
-      if (reg.estado === 'venta') v.estado = 'venta';
-      else if (reg.estado === 'secar'    && v.estado !== 'venta') v.estado = 'secar';
-      else if (reg.estado === 'pendiente' && v.estado === 'normal') v.estado = 'pendiente';
+      // Unir los tags de todas las tandas de esta vaca (sin duplicar)
+      for (const name of regTags(reg)) {
+        if (!v.tags.includes(name)) v.tags.push(name);
+      }
 
       const l = reg.litros || 0;
       if (tanda.turno === 'mañana') {
@@ -70,19 +72,33 @@ async function _buildVacaData(tandas) {
 }
 
 function _calcStats(vacas) {
-  const productivas = vacas.filter(v => v.estado !== 'venta' && v.estado !== 'pendiente');
-  const totalMañana = productivas.reduce((s, v) => s + v.litrosMañana, 0);
-  const totalTarde  = productivas.reduce((s, v) => s + v.litrosTarde, 0);
+  // Los tags ya no afectan el total: cuenta cualquier vaca con litros.
+  const totalMañana = vacas.reduce((s, v) => s + v.litrosMañana, 0);
+  const totalTarde  = vacas.reduce((s, v) => s + v.litrosTarde, 0);
   const totalDia    = totalMañana + totalTarde;
-  const conLitros   = productivas.filter(v => v.litrosMañana + v.litrosTarde > 0).length;
+  const conLitros   = vacas.filter(v => v.litrosMañana + v.litrosTarde > 0).length;
+  // Pendiente = sin litros y sin ningún tag
+  const cantPendiente = vacas.filter(v => !v.hasMañana && !v.hasTarde && v.tags.length === 0).length;
+  // Conteo por tag (para el resumen)
+  const tagCounts = {};
+  for (const v of vacas) for (const t of v.tags) tagCounts[t] = (tagCounts[t] || 0) + 1;
   return {
     totalMañana, totalTarde, totalDia,
     promedio:  conLitros > 0 ? totalDia / conLitros : 0,
     cantVacas: vacas.length,
-    cantVenta: vacas.filter(v => v.estado === 'venta').length,
-    cantSecar: vacas.filter(v => v.estado === 'secar').length,
-    cantPendiente: vacas.filter(v => v.estado === 'pendiente').length,
+    cantPendiente,
+    tagCounts,
   };
+}
+
+// Chips de tags para la planilla en pantalla
+function _plTagChips(tags) {
+  if (!tags || !tags.length) return '';
+  const map = _pd.tagColor || {};
+  return ' ' + tags.map(name => {
+    const color = map[name.toLowerCase()] || '#888888';
+    return `<span class="badge" style="background:${color};color:#fff">${name}</span>`;
+  }).join(' ');
 }
 
 // ─── HTML ─────────────────────────────────────────────────────────────────────
@@ -91,22 +107,18 @@ function _planillaHTML() {
   const { tambo, vet, control, vacas, stats } = _pd;
 
   const filas = vacas.map((v, i) => {
-    if (v.estado === 'venta') {
-      return `<tr class="fila-venta">
-        <td>${i + 1}</td>
-        <td class="rp-cell"><span class="badge badge--venta">VENTA</span> <span class="mono">${v.rp}</span></td>
-        <td colspan="3" style="text-align:center;color:var(--text3)">— venta —</td>
-      </tr>`;
-    }
-    const secarBadge = v.estado === 'secar' ? ' <span class="badge badge--secar">SECAR</span>' : '';
-    const mCell = v.estado === 'pendiente' ? '<span class="pend-cell">?</span>' : (v.hasMañana ? _fmtLp(v.litrosMañana) : '—');
-    const tCell = v.estado === 'pendiente' ? '<span class="pend-cell">?</span>' : (v.hasTarde  ? _fmtLp(v.litrosTarde)  : '—');
+    const esPend = !v.hasMañana && !v.hasTarde && v.tags.length === 0;
+    const sinLitros = !v.hasMañana && !v.hasTarde;
+    const mCell = esPend ? '<span class="pend-cell">?</span>' : (v.hasMañana ? _fmtLp(v.litrosMañana) : '—');
+    const tCell = esPend ? '<span class="pend-cell">?</span>' : (v.hasTarde  ? _fmtLp(v.litrosTarde)  : '—');
     const total  = v.litrosMañana + v.litrosTarde;
-    const totCell = v.estado === 'pendiente' ? '?' : _fmtLp(total);
-    const rowCls = v.estado === 'secar' ? ' class="fila-secar"' : '';
-    return `<tr${rowCls}>
+    const totCell = esPend ? '?' : (sinLitros ? '—' : _fmtLp(total));
+    const rowStyle = v.tags.length
+      ? ` style="background:${_hexToRgba((_pd.tagColor || {})[v.tags[0].toLowerCase()] || '#888888', 0.10)}"`
+      : '';
+    return `<tr${rowStyle}>
       <td>${i + 1}</td>
-      <td class="rp-cell"><span class="mono">${v.rp}</span>${secarBadge}</td>
+      <td class="rp-cell"><span class="mono">${v.rp}</span>${_plTagChips(v.tags)}</td>
       <td>${mCell}</td>
       <td>${tCell}</td>
       <td><strong>${totCell}</strong></td>
@@ -168,16 +180,13 @@ function _planillaHTML() {
               <span class="resumen-val">${stats.promedio > 0 ? stats.promedio.toFixed(1) : '—'}</span>
               <span class="resumen-lbl">Prom. L/vaca</span>
             </div>
-            ${stats.cantSecar > 0 ? `
-            <div class="resumen-item">
-              <span class="resumen-val" style="color:var(--secar)">${stats.cantSecar}</span>
-              <span class="resumen-lbl">A secar</span>
-            </div>` : ''}
-            ${stats.cantVenta > 0 ? `
-            <div class="resumen-item">
-              <span class="resumen-val" style="color:var(--accent2)">${stats.cantVenta}</span>
-              <span class="resumen-lbl">A venta</span>
-            </div>` : ''}
+            ${Object.entries(stats.tagCounts).map(([name, count]) => {
+              const color = (_pd.tagColor || {})[name.toLowerCase()] || '#888888';
+              return `<div class="resumen-item">
+              <span class="resumen-val" style="color:${color}">${count}</span>
+              <span class="resumen-lbl">${name}</span>
+            </div>`;
+            }).join('')}
             ${stats.cantPendiente > 0 ? `
             <div class="resumen-item">
               <span class="resumen-val" style="color:var(--pending)">${stats.cantPendiente}</span>
@@ -332,9 +341,7 @@ function _buildPagHTML(tambo, vet, control, pageVacas, startIdx, pagNum, totalPa
     <td style="${TD}background:#D8EFDF;font-weight:700;">${_fmtLp(stats.totalDia)}</td>
     <td style="${SEP}"></td>
     <td colspan="5" style="${TD}background:#D8EFDF;font-size:10px;color:#2D6A4F;">
-      ${stats.cantVacas} vacas · prom. ${stats.promedio > 0 ? stats.promedio.toFixed(1) : '—'} L/vaca
-      ${stats.cantSecar > 0 ? ` · secar: ${stats.cantSecar}` : ''}
-      ${stats.cantVenta > 0 ? ` · venta: ${stats.cantVenta}` : ''}
+      ${stats.cantVacas} vacas · prom. ${stats.promedio > 0 ? stats.promedio.toFixed(1) : '—'} L/vaca${_tagCountsText(stats)}
     </td>
   </tr>` : '';
 
@@ -370,22 +377,28 @@ function _buildPagHTML(tambo, vet, control, pageVacas, startIdx, pagNum, totalPa
   </div>`;
 }
 
+function _tagCountsText(stats) {
+  return Object.entries(stats.tagCounts || {})
+    .map(([n, c]) => ` · ${n.toLowerCase()}: ${c}`).join('');
+}
+
 function _imgCeldas(v, idx, TD) {
-  const bg = v.estado === 'venta' ? 'background:#FDEBD6;'
-           : v.estado === 'secar' ? 'background:#EDE6F7;'
-           : idx % 2 === 0        ? 'background:#fafaf8;'
+  const tags = v.tags || [];
+  const color = tags.length ? ((_pd.tagColor || {})[tags[0].toLowerCase()] || '#888888') : null;
+  const bg = tags.length ? `background:${_hexToRgba(color, 0.16)};`
+           : idx % 2 === 0 ? 'background:#fafaf8;'
            : '';
   const td = TD + bg;
-  if (v.estado === 'venta') {
-    return `<td style="${td}">${idx}</td>
-            <td style="${td}">${v.rp}</td>
-            <td colspan="3" style="${td}color:#E76F51;font-weight:600;">VENTA</td>`;
-  }
-  const m = v.estado === 'pendiente' ? '?' : (v.hasMañana ? _fmtLp(v.litrosMañana) : '—');
-  const t = v.estado === 'pendiente' ? '?' : (v.hasTarde  ? _fmtLp(v.litrosTarde)  : '—');
-  const tot = v.estado === 'pendiente' ? '?' : _fmtLp(v.litrosMañana + v.litrosTarde);
+  const sinLitros = !v.hasMañana && !v.hasTarde;
+  const esPend = sinLitros && tags.length === 0;
+  const m = esPend ? '?' : (v.hasMañana ? _fmtLp(v.litrosMañana) : '—');
+  const t = esPend ? '?' : (v.hasTarde  ? _fmtLp(v.litrosTarde)  : '—');
+  const tot = esPend ? '?' : (sinLitros ? '—' : _fmtLp(v.litrosMañana + v.litrosTarde));
+  const tagTxt = tags.length
+    ? `<div style="font-size:8px;line-height:1.15;color:${color};font-weight:700;">${tags.join(', ')}</div>`
+    : '';
   return `<td style="${td}">${idx}</td>
-          <td style="${td}">${v.rp}${v.estado === 'secar' ? ' ★' : ''}</td>
+          <td style="${td}">${v.rp}${tagTxt}</td>
           <td style="${td}">${m}</td>
           <td style="${td}">${t}</td>
           <td style="${TD + bg}font-weight:600;">${tot}</td>`;
@@ -403,8 +416,9 @@ function _compartirTexto() {
     `📊 *Total día: ${_fmtLp(stats.totalDia)} L*`,
     `📈 Promedio: ${stats.promedio > 0 ? stats.promedio.toFixed(1) : '—'} L/vaca`,
   ];
-  if (stats.cantSecar > 0)     lineas.push(`🔵 A secar: ${stats.cantSecar}`);
-  if (stats.cantVenta > 0)     lineas.push(`🟠 A venta: ${stats.cantVenta}`);
+  for (const [name, count] of Object.entries(stats.tagCounts || {})) {
+    lineas.push(`🏷️ ${name}: ${count}`);
+  }
   if (stats.cantPendiente > 0) lineas.push(`⏳ Pendientes: ${stats.cantPendiente}`);
   if (vet) lineas.push(``, `_${vet.nombre}${vet.matricula ? ' — Mat. ' + vet.matricula : ''}${vet.telefono ? ' — Tel. ' + vet.telefono : ''}_`);
 
@@ -516,9 +530,7 @@ function _buildPrintPage(tambo, vet, control, pageVacas, startIdx, pagNum, total
     <td style="${TD}background:#D8EFDF;font-weight:700;">${_fmtLp(stats.totalDia)}</td>
     <td style="${SEP}"></td>
     <td colspan="4" style="${TD}background:#D8EFDF;font-size:7.5pt;color:#2D6A4F;">
-      ${stats.cantVacas} vacas · prom. ${stats.promedio > 0 ? stats.promedio.toFixed(1) : '—'} L/vaca
-      ${stats.cantSecar > 0 ? ` · secar: ${stats.cantSecar}` : ''}
-      ${stats.cantVenta > 0 ? ` · venta: ${stats.cantVenta}` : ''}
+      ${stats.cantVacas} vacas · prom. ${stats.promedio > 0 ? stats.promedio.toFixed(1) : '—'} L/vaca${_tagCountsText(stats)}
     </td>
     <td style="${TD}background:#D8EFDF;"></td>
   </tr>` : '';
@@ -564,21 +576,22 @@ function _buildPrintPage(tambo, vet, control, pageVacas, startIdx, pagNum, total
 }
 
 function _printCeldas(v, idx, TD) {
-  const bg = v.estado === 'venta' ? 'background:#FDEBD6;'
-           : v.estado === 'secar' ? 'background:#EDE6F7;'
-           : idx % 2 === 0        ? 'background:#fafaf8;'
+  const tags = v.tags || [];
+  const color = tags.length ? ((_pd.tagColor || {})[tags[0].toLowerCase()] || '#888888') : null;
+  const bg = tags.length ? `background:${_hexToRgba(color, 0.16)};`
+           : idx % 2 === 0 ? 'background:#fafaf8;'
            : '';
   const td = TD + bg;
-  if (v.estado === 'venta') {
-    return `<td style="${td}">${idx}</td>
-            <td style="${td}">${v.rp}</td>
-            <td colspan="3" style="${td}color:#E76F51;font-weight:600;">VENTA</td>`;
-  }
-  const ma  = v.estado === 'pendiente' ? '?' : (v.hasMañana ? _fmtLp(v.litrosMañana) : '—');
-  const ta  = v.estado === 'pendiente' ? '?' : (v.hasTarde  ? _fmtLp(v.litrosTarde)  : '—');
-  const tot = v.estado === 'pendiente' ? '?' : _fmtLp(v.litrosMañana + v.litrosTarde);
+  const sinLitros = !v.hasMañana && !v.hasTarde;
+  const esPend = sinLitros && tags.length === 0;
+  const ma  = esPend ? '?' : (v.hasMañana ? _fmtLp(v.litrosMañana) : '—');
+  const ta  = esPend ? '?' : (v.hasTarde  ? _fmtLp(v.litrosTarde)  : '—');
+  const tot = esPend ? '?' : (sinLitros ? '—' : _fmtLp(v.litrosMañana + v.litrosTarde));
+  const tagTxt = tags.length
+    ? `<div style="font-size:6pt;line-height:1.1;color:${color};font-weight:700;">${tags.join(', ')}</div>`
+    : '';
   return `<td style="${td}">${idx}</td>
-          <td style="${td}">${v.rp}${v.estado === 'secar' ? ' ★' : ''}</td>
+          <td style="${td}">${v.rp}${tagTxt}</td>
           <td style="${td}">${ma}</td>
           <td style="${td}">${ta}</td>
           <td style="${TD + bg}font-weight:600;">${tot}</td>`;

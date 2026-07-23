@@ -595,6 +595,50 @@ h3 { font-size: 15px; font-weight: 600; }
   border-color: var(--secar);
 }
 
+/* Botón "+" para crear un tag al momento */
+.chip--add {
+  background: transparent;
+  color: var(--text2);
+  border: 1.5px dashed var(--border);
+  font-size: 18px;
+  line-height: 1;
+  padding: 6px 14px;
+}
+
+/* Badges de tags en filas de vaca */
+.tag-badges { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+
+/* ── ABM de tags (config) ─────────────────────────────────────────────────── */
+
+.tag-admin-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
+
+.tag-admin-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.tag-admin-row:last-child { border-bottom: none; }
+
+.tag-admin-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+.tag-admin-name { flex: 1; font-weight: 500; font-size: 14px; }
+
+.btn-tag-edit, .btn-tag-del {
+  border: none;
+  background: var(--surface2);
+  color: var(--text2);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+}
+.btn-tag-del { color: var(--danger); }
+
+.tag-admin-add { display: flex; gap: 8px; align-items: center; }
+.tag-admin-add .form-input { flex: 1; }
+
 /* ── Registro — autocomplete ──────────────────────────────────────────────── */
 
 .ac-list {

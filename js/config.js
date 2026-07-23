@@ -1,16 +1,17 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.29'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.30'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
-  const [vet, tambos] = await Promise.all([getVeterinario(), getTambos()]);
-  el.innerHTML = _configHTML(vet || {}, tambos);
+  await seedTagsIfEmpty();
+  const [vet, tambos, tags] = await Promise.all([getVeterinario(), getTambos(), getTags()]);
+  el.innerHTML = _configHTML(vet || {}, tambos, tags);
   updateSyncBadges();
 });
 
 // ─── HTML ─────────────────────────────────────────────────────────────────────
 
-function _configHTML(vet, tambos) {
+function _configHTML(vet, tambos, tags) {
   return `
     <div class="page-header">
       <div></div>
@@ -48,6 +49,29 @@ function _configHTML(vet, tambos) {
           </div>
           <button type="submit" class="btn btn-primary btn-full">Guardar</button>
         </form>
+      </div>
+
+      <!-- Tags de vacas -->
+      <div class="card">
+        <h3 class="card-title">Tags de vacas</h3>
+        <p class="form-hint" style="margin-top:-4px;margin-bottom:12px">
+          Etiquetas que podés ponerle a una vaca en el control (ej: Venta, Secar).
+          No afectan los litros, son una marca visual.
+        </p>
+        <div class="tag-admin-list">
+          ${tags.map(t => `
+            <div class="tag-admin-row">
+              <span class="tag-admin-dot" style="background:${t.color}"></span>
+              <span class="tag-admin-name">${t.nombre}</span>
+              <button class="btn-tag-edit" onclick="cfgRenombrarTag(${t.id}, '${t.nombre.replace(/'/g, "\\'")}')" title="Renombrar">✎</button>
+              <button class="btn-tag-del" onclick="cfgEliminarTag(${t.id}, '${t.nombre.replace(/'/g, "\\'")}')" title="Eliminar">✕</button>
+            </div>`).join('')}
+        </div>
+        <div class="tag-admin-add">
+          <input class="form-input" id="tag-nuevo" type="text" placeholder="Nuevo tag (ej: Tratamiento)"
+            autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();cfgAgregarTag();}">
+          <button class="btn btn-secondary btn-sm" onclick="cfgAgregarTag()">+ Agregar</button>
+        </div>
       </div>
 
       <!-- Sincronización -->
@@ -155,6 +179,38 @@ async function guardarVeterinario(e) {
   if (urlCambio && navigator.onLine) {
     await _buscarTambosEnScript(url);
   }
+}
+
+// ─── ABM de tags ──────────────────────────────────────────────────────────────
+
+async function cfgAgregarTag() {
+  const inp = document.getElementById('tag-nuevo');
+  const nombre = (inp?.value || '').trim();
+  if (!nombre) { inp?.focus(); return; }
+  const existe = await getTagByNombre(nombre);
+  if (existe) { alert('Ya existe un tag con ese nombre.'); return; }
+  await addTag(nombre);
+  navigate('/config');
+}
+
+async function cfgRenombrarTag(id, nombreActual) {
+  const nuevo = prompt('Nuevo nombre para el tag:', nombreActual);
+  if (nuevo === null) return;
+  const nombre = nuevo.trim();
+  if (!nombre || nombre === nombreActual) return;
+  const existe = await getTagByNombre(nombre);
+  if (existe && existe.id !== id) { alert('Ya existe otro tag con ese nombre.'); return; }
+  await updateTagNombre(id, nombre);
+  navigate('/config');
+}
+
+async function cfgEliminarTag(id, nombre) {
+  if (!confirm(
+    `¿Eliminar el tag "${nombre}"?\n\n` +
+    `Se va a quitar de todas las vacas que lo tuvieran. Esta acción no se puede deshacer.`
+  )) return;
+  await deleteTag(id);
+  navigate('/config');
 }
 
 async function _buscarTambosEnScript(url) {

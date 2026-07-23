@@ -21,11 +21,11 @@ registerScreen('home', async (el) => {
       const regs = await getRegistrosDeTanda(tanda.id);
       for (const r of regs) {
         totalVacas++;
-        if (r.estado !== 'venta' && r.estado !== 'pendiente' && r.litros != null) {
+        if (r.litros != null) {
           totalLitros += r.litros;
           conLitros++;
         }
-        if (r.estado === 'pendiente') pendientes++;
+        if (r.litros == null && regTags(r).length === 0) pendientes++;
       }
     }
     const promedio = conLitros > 0 ? totalLitros / conLitros : 0;

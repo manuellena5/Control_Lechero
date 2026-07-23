@@ -12,9 +12,11 @@ const R = {
   allTandas: [],
   allRegistros: {},         // { [tandaId]: Registro[] }
   padron: [],
-  estadoChip: null,         // 'venta' | 'secar' | null
+  tags: [],                 // catálogo de tags (registros de la tabla tags)
+  tagColor: {},             // { nombreLower → color }
+  tagsSel: new Set(),       // tags seleccionados para la próxima carga
   editRegId: null,
-  bsChip: null,
+  bsTags: new Set(),        // tags seleccionados en el bottom sheet de edición
   tandasExpandidas: new Set(), // IDs de tandas no-activas expandidas manualmente
   rpAlfanumerico: false,       // tipo de teclado para el input RP
   busquedaRP: '',              // filtro visual de búsqueda
@@ -33,7 +35,11 @@ registerScreen('registro', async (el, params) => {
   R.el = el;
   R.tamboId = Number(params.tamboId);
   R.turno = 'mañana';
-  R.estadoChip = null;
+  R.tagsSel = new Set();
+  await seedTagsIfEmpty();
+  R.tags = await getTags();
+  R.tagColor = {};
+  for (const t of R.tags) R.tagColor[(t.nombre || '').toLowerCase()] = t.color;
   R.tandasExpandidas = new Set();
   R.rpsDuplicados = new Set();
   R.ultimoRpWarning = null;
@@ -125,12 +131,7 @@ function _renderFull() {
             step="0.5" min="0" placeholder="Litros" enterkeyhint="done">
           <button class="btn-agregar" onclick="agregarVaca()">+</button>
         </div>
-        <div class="chips-row">
-          <button id="chip-venta" class="chip chip--venta${R.estadoChip === 'venta' ? ' active' : ''}"
-            onclick="toggleChip('venta')">Venta</button>
-          <button id="chip-secar" class="chip chip--secar${R.estadoChip === 'secar' ? ' active' : ''}"
-            onclick="toggleChip('secar')">Secar</button>
-        </div>
+        <div class="chips-row" id="chips-row">${_chipsHTML()}</div>
       </div>
 
       <div class="busqueda-rp-wrap">
@@ -166,7 +167,7 @@ function _computeStats() {
   for (const regs of Object.values(R.allRegistros)) {
     for (const r of regs) {
       rps.add(r.rp);
-      if (r.estado !== 'venta' && r.estado !== 'pendiente' && r.litros != null) {
+      if (r.litros != null) {
         litros += r.litros;
         conLitros++;
       }
@@ -219,9 +220,8 @@ function _tandaHTML(tanda) {
   if (q && regs.length === 0) return '';
 
   // Stats del header basados en todos los registros (no filtrados)
-  const litros = regsAll.reduce((s, r) =>
-    r.estado !== 'venta' && r.estado !== 'pendiente' && r.litros != null ? s + r.litros : s, 0);
-  const pend = regsAll.filter(r => r.estado === 'pendiente').length;
+  const litros = regsAll.reduce((s, r) => r.litros != null ? s + r.litros : s, 0);
+  const pend = regsAll.filter(r => r.litros == null && regTags(r).length === 0).length;
 
   // Tanda activa: mostrar más recientes primero
   const displayRegs = esActiva ? [...regs].reverse() : regs;
@@ -280,26 +280,26 @@ function _tandaHTML(tanda) {
 
 function _vacaRowHTML(reg) {
   const isDuplicate = R.rpsDuplicados.has(reg.rp);
-  const badges = {
-    venta:    `<span class="badge badge--venta">VENTA</span>`,
-    secar:    `<span class="badge badge--secar">SECAR</span>`,
-    pendiente:`<span class="badge badge--pending">Pend.</span>`,
-    normal:   `<span></span>`,
-  };
-  const litrosCell = reg.estado === 'venta'
-    ? `<span class="litros-btn litros-btn--disabled">—</span>`
-    : `<button class="litros-btn" onclick="abrirEdicion(${reg.id})">
-         ${reg.litros != null ? _fmtL(reg.litros) : '?'}
+  const tags = regTags(reg);
+  const esPend = reg.litros == null && tags.length === 0;
+  // Sin litros: "?" si está pendiente, "—" si tiene tags pero no se le cargó leche
+  const litrosLabel = reg.litros != null ? _fmtL(reg.litros) : (esPend ? '?' : '—');
+  const litrosCell = `<button class="litros-btn" onclick="abrirEdicion(${reg.id})">
+         ${litrosLabel}
          <svg class="edit-icon" viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
          </svg>
        </button>`;
 
+  const rowStyle = tags.length
+    ? ` style="background:${_hexToRgba(R.tagColor[tags[0].toLowerCase()] || '#888888', 0.10)}"`
+    : '';
+
   return `
-    <div class="vaca-row vaca-row--${reg.estado}${isDuplicate ? ' vaca-row--duplicado' : ''}">
+    <div class="vaca-row${isDuplicate ? ' vaca-row--duplicado' : ''}"${rowStyle}>
       <span class="rp-display mono">${reg.rp}${isDuplicate ? ' <span class="badge badge--duplicado">×2</span>' : ''}</span>
-      ${badges[reg.estado] || badges.normal}
+      ${_tagBadges(tags)}
       <span class="vaca-litros">${litrosCell}</span>
       <button class="btn-del" onclick="pedirConfirmEliminar(${reg.id}, '${reg.rp.replace(/'/g, "\\'")}')" title="Eliminar">
         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -312,13 +312,56 @@ function _vacaRowHTML(reg) {
 
 // ─── Acciones ─────────────────────────────────────────────────────────────────
 
-function toggleChip(chip) {
-  R.estadoChip = R.estadoChip === chip ? null : chip;
-  document.getElementById('chip-venta').classList.toggle('active', R.estadoChip === 'venta');
-  document.getElementById('chip-secar').classList.toggle('active', R.estadoChip === 'secar');
-  const litrosInp = document.getElementById('inp-litros');
-  if (litrosInp) litrosInp.disabled = R.estadoChip === 'venta';
-  document.getElementById('inp-rp').focus();
+// ─── Render de chips de tags ──────────────────────────────────────────────────
+
+function _tagChipStyle(color, active) {
+  return active
+    ? `background:${color};color:#fff;border:1px solid ${color};`
+    : `background:${_hexToRgba(color, 0.14)};color:${color};border:1px solid ${_hexToRgba(color, 0.5)};`;
+}
+
+function _chipsHTML() {
+  const chips = R.tags.map(t => {
+    const active = R.tagsSel.has(t.nombre);
+    return `<button class="chip" style="${_tagChipStyle(t.color, active)}"
+      onclick="toggleChip('${t.nombre.replace(/'/g, "\\'")}')">${t.nombre}</button>`;
+  }).join('');
+  return chips + `<button class="chip chip--add" onclick="agregarTagRapido()" title="Nuevo tag">＋</button>`;
+}
+
+function _renderChips() {
+  const row = document.getElementById('chips-row');
+  if (row) row.innerHTML = _chipsHTML();
+}
+
+// Badges de tags para mostrar en una fila de vaca
+function _tagBadges(tags) {
+  if (!tags || !tags.length) return '<span></span>';
+  return `<span class="tag-badges">` + tags.map(name => {
+    const color = R.tagColor[name.toLowerCase()] || '#888888';
+    return `<span class="badge" style="background:${color};color:#fff">${name}</span>`;
+  }).join('') + `</span>`;
+}
+
+function toggleChip(name) {
+  if (R.tagsSel.has(name)) R.tagsSel.delete(name);
+  else R.tagsSel.add(name);
+  _renderChips();
+  const rp = document.getElementById('inp-rp');
+  if (rp) rp.focus();
+}
+
+async function agregarTagRapido() {
+  const nombre = prompt('Nombre del nuevo tag (ej: Tratamiento):');
+  if (!nombre || !nombre.trim()) return;
+  await addTag(nombre.trim());
+  R.tags = await getTags();
+  R.tagColor = {};
+  for (const t of R.tags) R.tagColor[(t.nombre || '').toLowerCase()] = t.color;
+  // Seleccionar automáticamente el tag recién creado
+  const creado = R.tags.find(t => t.nombre.toLowerCase() === nombre.trim().toLowerCase());
+  if (creado) R.tagsSel.add(creado.nombre);
+  _renderChips();
 }
 
 async function agregarVaca() {
@@ -340,7 +383,7 @@ async function agregarVaca() {
   R.ultimoRpWarning = null; // Confirmado (segundo press) o RP nuevo
 
   const litros = litrosInp.value !== '' ? parseFloat(litrosInp.value) : null;
-  const estado = R.estadoChip || (litros != null ? 'normal' : 'pendiente');
+  const tags = [...R.tagsSel];
 
   // Crear tanda si no hay ninguna para este turno
   if (!R.tandaActivaId) {
@@ -350,7 +393,7 @@ async function agregarVaca() {
     R.tandaActivaId = t.id;
   }
 
-  const reg = await addRegistro(R.tandaActivaId, rp, litros, estado);
+  const reg = await addRegistro(R.tandaActivaId, rp, litros, tags);
   R.allRegistros[R.tandaActivaId].push(reg);
   if (!R.padron.find(v => v.rp === rp)) R.padron.push({ rp });
 
@@ -601,7 +644,7 @@ function _selectRp(rp) {
   if (rpInp) rpInp.value = rp;
   _hideAC();
   const litrosInp = document.getElementById('inp-litros');
-  if (litrosInp && R.estadoChip !== 'venta') litrosInp.focus();
+  if (litrosInp) litrosInp.focus();
   else if (rpInp) rpInp.focus();
 }
 
@@ -620,8 +663,7 @@ function _attachEntradaListeners() {
     if (e.key === 'Enter') {
       e.preventDefault();
       _hideAC();
-      if (R.estadoChip !== 'venta') litrosInp.focus();
-      else agregarVaca();
+      litrosInp.focus();
     }
   });
   litrosInp.addEventListener('keydown', e => {
@@ -647,10 +689,7 @@ function _ensureBottomSheet() {
       <div class="bs-body">
         <input id="bs-litros" type="number" inputmode="decimal" step="0.5" min="0"
                class="bs-litros-input" placeholder="Litros">
-        <div class="chips-row chips-row--centered">
-          <button id="bs-chip-venta" class="chip chip--venta" onclick="bsToggleChip('venta')">Venta</button>
-          <button id="bs-chip-secar" class="chip chip--secar" onclick="bsToggleChip('secar')">Secar</button>
-        </div>
+        <div class="chips-row chips-row--centered" id="bs-chips"></div>
       </div>
       <div class="bs-actions">
         <button class="btn btn-secondary" onclick="cerrarEdicion()">Cancelar</button>
@@ -670,17 +709,27 @@ function abrirEdicion(regId) {
   if (!reg) return;
 
   R.editRegId = regId;
-  R.bsChip = reg.estado === 'venta' ? 'venta' : reg.estado === 'secar' ? 'secar' : null;
+  R.bsTags = new Set(regTags(reg));
 
   document.getElementById('bs-title').textContent = 'RP ' + reg.rp;
-  document.getElementById('bs-subtitle').textContent = reg.estado;
+  const tagsTxt = [...R.bsTags].join(', ');
+  document.getElementById('bs-subtitle').textContent = tagsTxt || 'sin tags';
   const litrosInp = document.getElementById('bs-litros');
   litrosInp.value = reg.litros != null ? reg.litros : '';
-  litrosInp.disabled = reg.estado === 'venta';
-  document.getElementById('bs-chip-venta').classList.toggle('active', R.bsChip === 'venta');
-  document.getElementById('bs-chip-secar').classList.toggle('active', R.bsChip === 'secar');
+  litrosInp.disabled = false;
+  _renderBsChips();
   document.getElementById('bs-overlay').classList.remove('hidden');
   setTimeout(() => litrosInp.focus(), 100);
+}
+
+function _renderBsChips() {
+  const cont = document.getElementById('bs-chips');
+  if (!cont) return;
+  cont.innerHTML = R.tags.map(t => {
+    const active = R.bsTags.has(t.nombre);
+    return `<button class="chip" style="${_tagChipStyle(t.color, active)}"
+      onclick="bsToggleChip('${t.nombre.replace(/'/g, "\\'")}')">${t.nombre}</button>`;
+  }).join('');
 }
 
 function cerrarEdicion() {
@@ -689,20 +738,21 @@ function cerrarEdicion() {
   R.editRegId = null;
 }
 
-function bsToggleChip(chip) {
-  R.bsChip = R.bsChip === chip ? null : chip;
-  document.getElementById('bs-chip-venta').classList.toggle('active', R.bsChip === 'venta');
-  document.getElementById('bs-chip-secar').classList.toggle('active', R.bsChip === 'secar');
-  document.getElementById('bs-litros').disabled = R.bsChip === 'venta';
+function bsToggleChip(name) {
+  if (R.bsTags.has(name)) R.bsTags.delete(name);
+  else R.bsTags.add(name);
+  _renderBsChips();
+  const sub = document.getElementById('bs-subtitle');
+  if (sub) sub.textContent = [...R.bsTags].join(', ') || 'sin tags';
 }
 
 async function guardarEdicion() {
   if (!R.editRegId) return;
   const litrosVal = document.getElementById('bs-litros').value;
   const litros = litrosVal !== '' ? parseFloat(litrosVal) : null;
-  const estado = R.bsChip || (litros != null ? 'normal' : 'pendiente');
+  const tags = [...R.bsTags];
 
-  const reg = await updateRegistro(R.editRegId, litros, estado);
+  const reg = await updateRegistro(R.editRegId, litros, tags);
   for (const tid in R.allRegistros) {
     const idx = R.allRegistros[tid].findIndex(r => r.id === R.editRegId);
     if (idx !== -1) { R.allRegistros[tid][idx] = reg; break; }

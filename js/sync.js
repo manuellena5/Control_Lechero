@@ -95,12 +95,13 @@ async function _buildPayload(controlId, tamboId) {
     const regs = await getRegistrosDeTanda(tanda.id);
     for (const r of regs) {
       if (!vacaMap.has(r.rp)) {
-        vacaMap.set(r.rp, { rp: r.rp, litrosMañana: null, litrosTarde: null, estado: 'normal', tanda: tanda.numero });
+        vacaMap.set(r.rp, { rp: r.rp, litrosMañana: null, litrosTarde: null, tags: [], tanda: tanda.numero });
       }
       const v = vacaMap.get(r.rp);
-      if      (r.estado === 'venta')                              v.estado = 'venta';
-      else if (r.estado === 'secar'    && v.estado !== 'venta')   v.estado = 'secar';
-      else if (r.estado === 'pendiente' && v.estado === 'normal') v.estado = 'pendiente';
+      // Unir tags de todas las tandas de esta vaca
+      for (const name of regTags(r)) {
+        if (!v.tags.includes(name)) v.tags.push(name);
+      }
 
       if      (tanda.turno === 'mañana') v.litrosMañana = (v.litrosMañana || 0) + (r.litros || 0);
       else if (tanda.turno === 'tarde')  v.litrosTarde  = (v.litrosTarde  || 0) + (r.litros || 0);
@@ -109,16 +110,17 @@ async function _buildPayload(controlId, tamboId) {
 
   const registros = [...vacaMap.values()]
     .sort((a, b) => parseInt(a.rp) - parseInt(b.rp))
-    .map(v => ({
-      rp:           v.rp,
-      litrosMañana: v.litrosMañana,
-      litrosTarde:  v.litrosTarde,
-      total: (v.estado !== 'venta' && v.estado !== 'pendiente')
-        ? (v.litrosMañana || 0) + (v.litrosTarde || 0)
-        : null,
-      estado: v.estado,
-      tanda:  v.tanda,
-    }));
+    .map(v => {
+      const tieneLitros = v.litrosMañana != null || v.litrosTarde != null;
+      return {
+        rp:           v.rp,
+        litrosMañana: v.litrosMañana,
+        litrosTarde:  v.litrosTarde,
+        total: tieneLitros ? (v.litrosMañana || 0) + (v.litrosTarde || 0) : null,
+        tags: v.tags,
+        tanda: v.tanda,
+      };
+    });
 
   // Fecha: YYYY-MM-DD → DD-MM-YYYY para el nombre de la hoja
   const [y, m, d] = control.fecha.split('-');
@@ -212,15 +214,21 @@ async function pullFromSheet(tamboId) {
     const controlId = await db.controles.add({ tamboId, fecha: cd.fecha });
     const regs = cd.registros || [];
 
-    // Vacas con litros de mañana + pendientes → tanda mañana
-    const paraMañana = regs.filter(r => r.litrosMañana != null || r.estado === 'pendiente');
+    // Normalizar tags (hojas nuevas traen r.tags; las viejas, r.estado)
+    const tagsDe = r => Array.isArray(r.tags)
+      ? r.tags
+      : (r.estado === 'secar' ? ['Secar'] : r.estado === 'venta' ? ['Venta'] : []);
+
+    // Vacas con litros de mañana, o sin litros en ningún turno (pendientes / solo-tags) → tanda mañana
+    const paraMañana = regs.filter(r =>
+      r.litrosMañana != null || (r.litrosMañana == null && r.litrosTarde == null));
     if (paraMañana.length > 0) {
       const tandaId = await db.tandas.add({ controlId, turno: 'mañana', numero: 1 });
       for (const r of paraMañana) {
         await db.registros.add({
           tandaId, rp: r.rp,
           litros: r.litrosMañana ?? null,
-          estado: r.estado || 'normal',
+          tags: tagsDe(r),
         });
       }
     }
@@ -233,27 +241,7 @@ async function pullFromSheet(tamboId) {
         await db.registros.add({
           tandaId, rp: r.rp,
           litros: r.litrosTarde,
-          estado: r.estado || 'normal',
-        });
-      }
-    }
-
-    // Vacas solo con estado (venta/secar sin litros) que no entraron en ninguna tanda
-    const soloEstado = regs.filter(r =>
-      r.litrosMañana == null && r.litrosTarde == null && r.estado !== 'pendiente'
-    );
-    if (soloEstado.length > 0) {
-      // Agregar a mañana (o crear la tanda si no existía)
-      let tandaMañana = await db.tandas
-        .where('controlId').equals(controlId).filter(t => t.turno === 'mañana').first();
-      if (!tandaMañana) {
-        const tid = await db.tandas.add({ controlId, turno: 'mañana', numero: 1 });
-        tandaMañana = { id: tid };
-      }
-      for (const r of soloEstado) {
-        await db.registros.add({
-          tandaId: tandaMañana.id, rp: r.rp,
-          litros: null, estado: r.estado,
+          tags: tagsDe(r),
         });
       }
     }

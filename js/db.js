@@ -15,6 +15,14 @@ function fmtL(n) {
   return n % 1 === 0 ? String(n) : n.toFixed(1);
 }
 
+function _hexToRgba(hex, a) {
+  const h = (hex || '#888888').replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
 const db = new Dexie('ControlLechero');
 
 db.version(1).stores({
@@ -26,6 +34,102 @@ db.version(1).stores({
   registros:      '++id, [tandaId+rp], tandaId, rp, litros, estado',
   syncQueue:      '++id, operacion, tabla, intentos, creadoAt'
 });
+
+// v2: tags de vaca (etiquetas configurables). Migra el campo `estado` de cada
+// registro a un array `tags` con nombres de etiqueta. Los estados normal y
+// pendiente no son tags (se derivan de si hay litros o no).
+db.version(2).stores({
+  tags: '++id, orden'
+}).upgrade(async tx => {
+  await tx.table('registros').toCollection().modify(r => {
+    if (!Array.isArray(r.tags)) {
+      r.tags = r.estado === 'secar' ? ['Secar']
+             : r.estado === 'venta' ? ['Venta']
+             : [];
+    }
+  });
+});
+
+// ─── Tags (etiquetas de vaca) ────────────────────────────────────────────────
+
+// Colores automáticos para tags nuevos (evitan chocar con mañana/tarde/accent).
+const TAG_PALETTE = ['#3A86C8', '#C47B2A', '#2D9E75', '#C0392B', '#D4537E', '#0E7C7B', '#8E44AD', '#B8860B'];
+
+async function seedTagsIfEmpty() {
+  const n = await db.tags.count();
+  if (n === 0) {
+    await db.tags.bulkAdd([
+      { nombre: 'Venta', color: '#E76F51', orden: 0, builtin: 1 },
+      { nombre: 'Secar', color: '#7B5EA7', orden: 1, builtin: 1 },
+    ]);
+  }
+}
+
+async function getTags() {
+  return db.tags.orderBy('orden').toArray();
+}
+
+async function getTagByNombre(nombre) {
+  const low = nombre.trim().toLowerCase();
+  return db.tags.filter(t => (t.nombre || '').toLowerCase() === low).first();
+}
+
+// Devuelve un mapa { nombreLower → color } para renderizar chips.
+async function getTagColorMap() {
+  const tags = await db.tags.toArray();
+  const map = {};
+  for (const t of tags) map[(t.nombre || '').toLowerCase()] = t.color;
+  return map;
+}
+
+async function addTag(nombre) {
+  nombre = (nombre || '').trim();
+  if (!nombre) return null;
+  const existe = await getTagByNombre(nombre);
+  if (existe) return existe.id;
+  const all = await db.tags.toArray();
+  const color = TAG_PALETTE[Math.max(0, all.length - 2) % TAG_PALETTE.length];
+  const orden = all.length ? Math.max(...all.map(t => t.orden || 0)) + 1 : 0;
+  return db.tags.add({ nombre, color, orden, builtin: 0 });
+}
+
+async function updateTagNombre(id, nombre) {
+  nombre = (nombre || '').trim();
+  if (!nombre) return;
+  const tag = await db.tags.get(id);
+  if (!tag) return;
+  const viejo = tag.nombre;
+  if (viejo === nombre) return;
+  await db.tags.update(id, { nombre });
+  // Cascada: renombrar en todos los registros que usaban el nombre viejo
+  await db.registros.toCollection().modify(r => {
+    if (Array.isArray(r.tags)) {
+      const i = r.tags.indexOf(viejo);
+      if (i !== -1) r.tags[i] = nombre;
+    }
+  });
+}
+
+async function deleteTag(id) {
+  const tag = await db.tags.get(id);
+  if (!tag) return;
+  await db.tags.delete(id);
+  // Cascada: quitar el tag de los registros que lo tuvieran
+  await db.registros.toCollection().modify(r => {
+    if (Array.isArray(r.tags)) {
+      const i = r.tags.indexOf(tag.nombre);
+      if (i !== -1) r.tags.splice(i, 1);
+    }
+  });
+}
+
+// Tags de un registro, con compatibilidad hacia registros antiguos (campo estado).
+function regTags(reg) {
+  if (Array.isArray(reg.tags)) return reg.tags;
+  if (reg.estado === 'secar') return ['Secar'];
+  if (reg.estado === 'venta') return ['Venta'];
+  return [];
+}
 
 // ─── Veterinario ────────────────────────────────────────────────────────────
 
@@ -114,22 +218,21 @@ async function getRegistrosDeTanda(tandaId) {
   return db.registros.where('tandaId').equals(tandaId).sortBy('rp');
 }
 
-async function addRegistro(tandaId, rp, litros, estado) {
+async function addRegistro(tandaId, rp, litros, tags) {
   // Obtener tamboId para el padrón — navegar tandas → controles
   const tanda = await db.tandas.get(tandaId);
   const control = await db.controles.get(tanda.controlId);
   await upsertVacaRegistro(control.tamboId, rp);
 
-  const estadoFinal = estado || (litros != null ? 'normal' : 'pendiente');
-  const id = await db.registros.add({ tandaId, rp, litros: litros ?? null, estado: estadoFinal });
+  const id = await db.registros.add({ tandaId, rp, litros: litros ?? null, tags: tags || [] });
   return db.registros.get(id);
 }
 
-async function updateRegistro(id, litros, estado) {
+async function updateRegistro(id, litros, tags) {
   const current = await db.registros.get(id);
-  const estadoFinal = estado !== undefined ? estado : current.estado;
+  const tagsFinal   = tags   !== undefined ? tags   : regTags(current);
   const litrosFinal = litros !== undefined ? litros : current.litros;
-  await db.registros.update(id, { litros: litrosFinal, estado: estadoFinal });
+  await db.registros.update(id, { litros: litrosFinal, tags: tagsFinal });
   return db.registros.get(id);
 }
 
@@ -143,9 +246,8 @@ async function getLitrosControl(controlId) {
   for (const tanda of tandas) {
     const regs = await db.registros.where('tandaId').equals(tanda.id).toArray();
     for (const r of regs) {
-      if (r.estado !== 'venta' && r.estado !== 'pendiente' && r.litros != null) {
-        total += r.litros;
-      }
+      // Los tags ya no afectan el total: cuenta cualquier vaca con litros cargados.
+      if (r.litros != null) total += r.litros;
     }
   }
   return total;
@@ -184,7 +286,7 @@ async function getHistorialVaca(tamboId, rp) {
       turno: tanda.turno,
       tanda: tanda.numero,
       litros: reg.litros,
-      estado: reg.estado,
+      tags: regTags(reg),
       registroId: reg.id
     });
   }
