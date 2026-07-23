@@ -12,6 +12,7 @@ const ROUTES = [
   { pattern: /^\/tambos$/,                                  screen: 'tambos',    params: [] },
   { pattern: /^\/historial$/,                               screen: 'historial', params: [] },
   { pattern: /^\/config$/,                                  screen: 'config',    params: [] },
+  { pattern: /^\/ayuda$/,                                    screen: 'ayuda',     params: [] },
   { pattern: /^\/?$/,                                       screen: 'home',      params: [] },
 ];
 
@@ -47,7 +48,7 @@ function _updateBottomNav(screen) {
   if (!nav) return;
   nav.style.display = FULLSCREEN.has(screen) ? 'none' : '';
 
-  const map = { home: '/', tambos: '/tambos', historial: '/historial', config: '/config' };
+  const map = { home: '/', tambos: '/tambos', historial: '/historial', config: '/config', ayuda: '/ayuda' };
   nav.querySelectorAll('.nav-item').forEach(el => {
     const target = el.dataset.route;
     el.classList.toggle('active', screen === target || location.hash === '#' + map[target]);
