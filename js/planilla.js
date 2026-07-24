@@ -263,26 +263,36 @@ async function _compartirImagen() {
   const COLS      = 2;
   const FILAS_COL = 40;
   const POR_PAG   = COLS * FILAS_COL;
+  const totalPags = Math.max(1, Math.ceil(vacas.length / POR_PAG));
+
+  // Escala adaptativa: en controles grandes (varias hojas) bajamos a 1.5 para
+  // no saturar la memoria del celular. Sigue siendo nítido para WhatsApp.
+  const scale = totalPags >= 3 ? 1.5 : 2;
 
   const btn = document.querySelector('.pl-actions button');
-  if (btn) { btn.textContent = '⏳ Generando imagen…'; btn.disabled = true; }
+  const setBtn = txt => { if (btn) btn.textContent = txt; };
+  if (btn) btn.disabled = true;
+  setBtn(totalPags > 1 ? `⏳ Generando hoja 1 de ${totalPags}…` : '⏳ Generando imagen…');
+
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;';
+  document.body.appendChild(container);
 
   try {
-    const container = document.createElement('div');
-    container.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;';
-    document.body.appendChild(container);
-
-    const totalPags = Math.max(1, Math.ceil(vacas.length / POR_PAG));
     const files = [];
 
     for (let p = 0; p < totalPags; p++) {
+      if (totalPags > 1) setBtn(`⏳ Generando hoja ${p + 1} de ${totalPags}…`);
+      // Ceder un frame: deja que el navegador pinte el progreso y recicle memoria
+      await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+
       const startIdx  = p * POR_PAG;
       const pageVacas = vacas.slice(startIdx, startIdx + POR_PAG);
       container.innerHTML = _buildPagHTML(tambo, vet, control, pageVacas, startIdx, p + 1, totalPags, stats);
 
-      const canvas = await html2canvas(container.firstElementChild, {
+      let canvas = await html2canvas(container.firstElementChild, {
         backgroundColor: '#ffffff',
-        scale: 2,
+        scale,
         useCORS: true,
         logging: false,
       });
@@ -295,15 +305,19 @@ async function _compartirImagen() {
         }, 'image/png');
       });
       files.push(file);
+
+      // Liberar el canvas y el DOM antes de la próxima hoja
+      canvas.width = 0; canvas.height = 0; canvas = null;
+      container.innerHTML = '';
     }
 
-    document.body.removeChild(container);
-
+    setBtn('⏳ Abriendo para compartir…');
     await navigator.share({ files, title: `Control Lechero — ${tambo.nombre}` });
 
   } catch (err) {
     if (err.name !== 'AbortError') _compartirTexto();
   } finally {
+    if (container.parentNode) document.body.removeChild(container);
     if (btn) { btn.textContent = '📱 Compartir por WhatsApp'; btn.disabled = false; }
   }
 }

@@ -250,12 +250,12 @@ function _tandaHTML(tanda) {
       <div class="tanda-group tanda-group--active${estaVacia ? ' tanda-group--vacia' : ''}" ${longPressAttrs}>
         <div class="tanda-header">
           <span class="tanda-title">Tanda ${tanda.numero}</span>
-          <span class="tanda-meta">
+          <span class="tanda-meta" id="tanda-meta-${tanda.id}">
             ${regsAll.length} vaca${regsAll.length !== 1 ? 's' : ''} · ${_fmtL(litros)} L
             ${pend > 0 ? `<span class="badge badge--pending"> ${pend} pend.</span>` : ''}
           </span>
         </div>
-        <div class="tanda-body">${bodyHTML}</div>
+        <div class="tanda-body" id="tanda-body-${tanda.id}">${bodyHTML}</div>
       </div>
     `;
   }
@@ -264,7 +264,7 @@ function _tandaHTML(tanda) {
     <div class="tanda-group${estaVacia ? ' tanda-group--vacia' : ''}" ${longPressAttrs}>
       <div class="tanda-header tanda-header--clickable" onclick="toggleTanda(${tanda.id})">
         <span class="tanda-title">Tanda ${tanda.numero}</span>
-        <span class="tanda-meta">
+        <span class="tanda-meta" id="tanda-meta-${tanda.id}">
           ${regsAll.length} vaca${regsAll.length !== 1 ? 's' : ''} · ${_fmtL(litros)} L
           ${pend > 0 ? `<span class="badge badge--pending"> ${pend} pend.</span>` : ''}
           <svg class="tanda-chevron${expandida ? ' tanda-chevron--open' : ''}" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -272,7 +272,7 @@ function _tandaHTML(tanda) {
           </svg>
         </span>
       </div>
-      <div class="tanda-body${expandida ? '' : ' tanda-body--collapsed'}">${bodyHTML}</div>
+      <div class="tanda-body${expandida ? '' : ' tanda-body--collapsed'}" id="tanda-body-${tanda.id}">${bodyHTML}</div>
     </div>
   `;
 }
@@ -391,17 +391,51 @@ async function agregarVaca() {
     R.tandaActivaId = t.id;
   }
 
-  const reg = await addRegistro(R.tandaActivaId, rp, litros, tags);
-  R.allRegistros[R.tandaActivaId].push(reg);
+  const tandaDestino = R.tandaActivaId;
+  const reg = await addRegistro(tandaDestino, rp, litros, tags);
+  R.allRegistros[tandaDestino].push(reg);
   if (!R.padron.find(v => v.rp === rp)) R.padron.push({ rp });
 
   rpInp.value = '';
   litrosInp.value = '';
   _hideAC();
   _renderStats();
-  _renderTandas();
+
+  // Inserción incremental: agrega solo la fila nueva en lugar de reconstruir toda
+  // la lista (clave con muchas vacas). Con búsqueda activa o si falta el nodo en
+  // el DOM (tanda recién creada), cae al re-render completo.
+  const body = document.getElementById('tanda-body-' + tandaDestino);
+  if (!R.busquedaRP.trim() && body) {
+    _insertarVacaRow(tandaDestino, reg, body);
+  } else {
+    _renderTandas();
+  }
+
   enqueueControlSync(R.controlId, R.tamboId);
   rpInp.focus();
+}
+
+// Inserta la fila de una vaca al principio de la tanda activa (muestra las más
+// recientes primero) y actualiza el encabezado de esa tanda, sin redibujar todo.
+function _insertarVacaRow(tandaId, reg, body) {
+  const hint = body.querySelector('.tanda-vacia-hint');
+  if (hint) hint.remove();
+  body.insertAdjacentHTML('afterbegin', _vacaRowHTML(reg));
+  _actualizarMetaTanda(tandaId, true);
+  const grupo = body.closest('.tanda-group');
+  if (grupo) grupo.classList.remove('tanda-group--vacia');
+}
+
+function _actualizarMetaTanda(tandaId, esActiva) {
+  const meta = document.getElementById('tanda-meta-' + tandaId);
+  if (!meta) return;
+  const regsAll = R.allRegistros[tandaId] || [];
+  const litros = regsAll.reduce((s, r) => r.litros != null ? s + r.litros : s, 0);
+  const pend = regsAll.filter(r => r.litros == null && regTags(r).length === 0).length;
+  const pendBadge = pend > 0 ? ` <span class="badge badge--pending"> ${pend} pend.</span>` : '';
+  const chevron = esActiva ? '' :
+    `<svg class="tanda-chevron tanda-chevron--open" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+  meta.innerHTML = `${regsAll.length} vaca${regsAll.length !== 1 ? 's' : ''} · ${_fmtL(litros)} L${pendBadge}${chevron}`;
 }
 
 async function nuevaTanda() {

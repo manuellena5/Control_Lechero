@@ -1,6 +1,6 @@
 /* sw.js — Service Worker offline-first */
 
-const CACHE = 'control-lechero-v31';
+const CACHE = 'control-lechero-v32';
 
 // html2canvas.min.js (~195 KB) no forma parte del app shell:
 // solo se usa para compartir imagen por WhatsApp y tiene fallback a texto.
