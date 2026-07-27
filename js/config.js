@@ -1,6 +1,6 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.38'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.39'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   await seedTagsIfEmpty();
@@ -413,7 +413,8 @@ async function buscarActualizaciones() {
   // 1. Leer la versión publicada en el servidor, sin pasar por la caché HTTP.
   let remoteV = null;
   try {
-    const res  = await fetch('./sw.js', { cache: 'no-store' });
+    // El query único evita cualquier copia cacheada (HTTP o del Service Worker)
+    const res  = await fetch(`./sw.js?_=${Date.now()}`, { cache: 'no-store' });
     const text = await res.text();
     remoteV = text.match(/const CACHE = '(control-lechero-v\d+)'/)?.[1] || null;
   } catch (_) {

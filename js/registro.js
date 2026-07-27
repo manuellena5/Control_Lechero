@@ -20,8 +20,7 @@ const R = {
   tandasExpandidas: new Set(), // IDs de tandas no-activas expandidas manualmente
   rpAlfanumerico: false,       // tipo de teclado para el input RP
   busquedaRP: '',              // filtro visual de búsqueda
-  rpsDuplicados: new Set(),    // RPs con advertencia de duplicado activa
-  ultimoRpWarning: null,       // RP que ya recibió advertencia (confirmar en segundo press)
+  rpsDuplicados: new Set(),    // RPs duplicados detectados en datos ya existentes
 };
 
 let _pendingEliminarId     = null;
@@ -40,7 +39,6 @@ registerScreen('registro', async (el, params) => {
   R.tagColor = await getTagColorMap();   // colores de todos (incluye deshabilitados)
   R.tandasExpandidas = new Set();
   R.rpsDuplicados = new Set();
-  R.ultimoRpWarning = null;
   R.busquedaRP = '';
 
   R.tambo = await getTambo(R.tamboId);
@@ -60,6 +58,7 @@ registerScreen('registro', async (el, params) => {
   _ensureBottomSheet();
   _ensureConfirmSheet();
   _ensureConfirmTandaSheet();
+  _ensureDuplicadoSheet();
   _initTecladoWatcher();
 });
 
@@ -71,7 +70,25 @@ async function _regLoad() {
   for (const t of R.allTandas) {
     R.allRegistros[t.id] = await getRegistrosDeTanda(t.id);
   }
+  _detectarDuplicadosExistentes();
   _syncTandaActiva();
+}
+
+// La app ya no deja crear duplicados, pero pueden venir de controles viejos o
+// importados desde Sheets. Los marcamos con ×2 para que se vean y se corrijan.
+function _detectarDuplicadosExistentes() {
+  R.rpsDuplicados = new Set();
+  const turnos = [...new Set(R.allTandas.map(t => t.turno))];
+  for (const turno of turnos) {
+    const vistos = new Set();
+    for (const t of R.allTandas.filter(x => x.turno === turno)) {
+      for (const r of (R.allRegistros[t.id] || [])) {
+        const key = (r.rp || '').trim().toUpperCase();
+        if (vistos.has(key)) R.rpsDuplicados.add(r.rp);
+        else vistos.add(key);
+      }
+    }
+  }
 }
 
 function _syncTandaActiva() {
@@ -390,23 +407,31 @@ async function agregarTagRapido() {
   _renderChips();
 }
 
+// Devuelve la tanda del turno actual donde ya está cargado ese RP, o null.
+// Compara sin distinguir mayúsculas (los RP pueden ser alfanuméricos).
+function _buscarDuplicadoEnTurno(rp) {
+  const objetivo = rp.trim().toUpperCase();
+  const tandasTurno = R.allTandas.filter(t => t.turno === R.turno);
+  for (const t of tandasTurno) {
+    const regs = R.allRegistros[t.id] || [];
+    if (regs.some(r => (r.rp || '').trim().toUpperCase() === objetivo)) return t;
+  }
+  return null;
+}
+
 async function agregarVaca() {
   const rpInp     = document.getElementById('inp-rp');
   const litrosInp = document.getElementById('inp-litros');
   const rp = rpInp.value.trim();
   if (!rp) { rpInp.focus(); return; }
 
-  // Validar duplicado solo dentro del mismo turno (distinto turno = ordeñe distinto, es normal)
-  const tandasDelTurno = R.allTandas.filter(t => t.turno === R.turno).map(t => t.id);
-  const yaExiste = tandasDelTurno.some(tid => (R.allRegistros[tid] || []).some(r => r.rp === rp));
-  if (yaExiste && R.ultimoRpWarning !== rp) {
-    R.ultimoRpWarning = rp;
-    R.rpsDuplicados.add(rp);
-    _showToast(`RP ${rp} ya está en este control. Presioná + de nuevo para confirmar.`, 'warning');
-    _renderTandas();
+  // Validar duplicado solo dentro del mismo turno.
+  // En otro turno es normal que la misma vaca aparezca (es otro ordeñe).
+  const dup = _buscarDuplicadoEnTurno(rp);
+  if (dup) {
+    mostrarAvisoDuplicado(rp, dup.numero);
     return;
   }
-  R.ultimoRpWarning = null; // Confirmado (segundo press) o RP nuevo
 
   const litros = parseLitros(litrosInp.value);
   const tags = [...R.tagsSel];
@@ -490,16 +515,9 @@ async function eliminarDeControl(regId) {
     R.allRegistros[tid] = R.allRegistros[tid].filter(r => r.id !== regId);
   }
 
-  // Si ese RP ya no existe en ninguna tanda del turno, limpiar marca de duplicado
-  if (rpEliminado) {
-    const tandasDelTurno = R.allTandas.filter(t => t.turno === R.turno).map(t => t.id);
-    const sigueExistiendo = tandasDelTurno.some(tid =>
-      (R.allRegistros[tid] || []).some(r => r.rp === rpEliminado)
-    );
-    if (!sigueExistiendo) {
-      R.rpsDuplicados.delete(rpEliminado);
-      if (R.ultimoRpWarning === rpEliminado) R.ultimoRpWarning = null;
-    }
+  // Si ese RP ya no está repetido en el turno, sacarle la marca de duplicado
+  if (rpEliminado && R.rpsDuplicados.has(rpEliminado)) {
+    if (!_buscarDuplicadoEnTurno(rpEliminado)) R.rpsDuplicados.delete(rpEliminado);
   }
 
   _renderStats();
@@ -715,6 +733,68 @@ function _attachEntradaListeners() {
   litrosInp.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); agregarVaca(); }
   });
+}
+
+// ─── Aviso de RP duplicado ───────────────────────────────────────────────────
+
+function _ensureDuplicadoSheet() {
+  if (document.getElementById('dup-overlay')) return;
+  const div = document.createElement('div');
+  div.id = 'dup-overlay';
+  div.className = 'bs-overlay hidden';
+  div.onclick = cerrarAvisoDuplicado;
+  div.innerHTML = `
+    <div class="bottom-sheet" onclick="event.stopPropagation()">
+      <div class="bs-handle"></div>
+      <div class="bs-header">
+        <h3>Vaca ya cargada</h3>
+        <p class="text3">
+          El RP <strong id="dup-rp"></strong> ya está cargado en este turno
+          (<span id="dup-tanda"></span>).
+        </p>
+        <p class="text3" style="margin-top:8px">
+          No se puede cargar dos veces en el mismo turno. Si necesitás corregir
+          los litros, buscá la vaca y tocá el valor para editarlo.
+        </p>
+      </div>
+      <div class="bs-actions">
+        <button class="btn btn-secondary" onclick="cerrarAvisoDuplicado()">Entendido</button>
+        <button class="btn btn-primary" onclick="verVacaDuplicada()">Ver la vaca</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(div);
+}
+
+let _dupRp = '';
+
+function mostrarAvisoDuplicado(rp, numeroTanda) {
+  _dupRp = rp;
+  _ensureDuplicadoSheet();
+  document.getElementById('dup-rp').textContent = rp;
+  document.getElementById('dup-tanda').textContent = 'Tanda ' + numeroTanda;
+  document.getElementById('dup-overlay').classList.remove('hidden');
+}
+
+function cerrarAvisoDuplicado() {
+  const ov = document.getElementById('dup-overlay');
+  if (ov) ov.classList.add('hidden');
+  // Dejar el RP seleccionado para poder corregirlo de una
+  const rpInp = document.getElementById('inp-rp');
+  if (rpInp) { rpInp.focus(); rpInp.select(); }
+}
+
+// Cierra el aviso y filtra la lista por ese RP para encontrarlo rápido
+function verVacaDuplicada() {
+  const ov = document.getElementById('dup-overlay');
+  if (ov) ov.classList.add('hidden');
+  R.busquedaRP = _dupRp;
+  const inpBusq = document.getElementById('inp-busqueda');
+  if (inpBusq) inpBusq.value = _dupRp;
+  _renderTandas();
+  const rpInp = document.getElementById('inp-rp');
+  if (rpInp) rpInp.value = '';
+  if (inpBusq) inpBusq.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
 // ─── Teclado en pantalla ─────────────────────────────────────────────────────

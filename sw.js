@@ -1,6 +1,6 @@
 /* sw.js — Service Worker offline-first */
 
-const CACHE = 'control-lechero-v38';
+const CACHE = 'control-lechero-v39';
 
 // html2canvas.min.js (~195 KB) no forma parte del app shell:
 // solo se usa para compartir imagen por WhatsApp y tiene fallback a texto.
@@ -58,6 +58,11 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   // Dejar pasar las peticiones POST (sync con Apps Script)
   if (e.request.method !== 'GET') return;
+
+  // Nunca cachear el propio sw.js: la pantalla de Config lo descarga para leer
+  // el número de versión publicado. Si lo sirviéramos desde caché, siempre
+  // leería la versión vieja y nunca detectaría actualizaciones.
+  if (new URL(e.request.url).pathname.endsWith('/sw.js')) return;
 
   e.respondWith(
     caches.match(e.request).then(cached => {
