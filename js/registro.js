@@ -27,7 +27,6 @@ const R = {
 let _pendingEliminarId     = null;
 let _pendingEliminarRp     = '';
 let _pendingEliminarTandaId = null;
-let _longPressTimer         = null;
 
 // ─── Pantalla principal ───────────────────────────────────────────────────────
 
@@ -230,30 +229,22 @@ function _tandaHTML(tanda) {
   const estaVacia = regsAll.length === 0;
 
   const bodyHTML = displayRegs.length === 0
-    ? `<p class="text3 tanda-vacia-hint" style="padding:8px 16px;font-size:13px">
-         Tanda vacía${estaVacia ? ' · <em>Mantené presionado para eliminar</em>' : ''}
-       </p>`
+    ? `<p class="text3 tanda-vacia-hint" style="padding:8px 16px;font-size:13px">Tanda vacía</p>`
     : displayRegs.map(r => _vacaRowHTML(r)).join('');
 
-  // Long-press attrs solo en tandas vacías
-  const longPressAttrs = estaVacia
-    ? `ontouchstart="_iniciarLongPressTanda(event,${tanda.id})"
-       ontouchend="_cancelarLongPressTanda()"
-       ontouchmove="_cancelarLongPressTanda()"
-       onmousedown="_iniciarLongPressTanda(event,${tanda.id})"
-       onmouseup="_cancelarLongPressTanda()"
-       onmouseleave="_cancelarLongPressTanda()"`
-    : '';
+  // Botón de eliminar: solo en tandas sin vacas cargadas
+  const btnEliminar = estaVacia ? _btnEliminarTandaHTML(tanda) : '';
 
   if (esActiva) {
     return `
-      <div class="tanda-group tanda-group--active${estaVacia ? ' tanda-group--vacia' : ''}" ${longPressAttrs}>
+      <div class="tanda-group tanda-group--active${estaVacia ? ' tanda-group--vacia' : ''}">
         <div class="tanda-header">
           <span class="tanda-title">Tanda ${tanda.numero}</span>
           <span class="tanda-meta" id="tanda-meta-${tanda.id}">
             ${regsAll.length} vaca${regsAll.length !== 1 ? 's' : ''} · ${_fmtL(litros)} L
             ${pend > 0 ? `<span class="badge badge--pending"> ${pend} pend.</span>` : ''}
           </span>
+          ${btnEliminar}
         </div>
         <div class="tanda-body" id="tanda-body-${tanda.id}">${bodyHTML}</div>
       </div>
@@ -261,7 +252,7 @@ function _tandaHTML(tanda) {
   }
 
   return `
-    <div class="tanda-group${estaVacia ? ' tanda-group--vacia' : ''}" ${longPressAttrs}>
+    <div class="tanda-group${estaVacia ? ' tanda-group--vacia' : ''}">
       <div class="tanda-header tanda-header--clickable" onclick="toggleTanda(${tanda.id})">
         <span class="tanda-title">Tanda ${tanda.numero}</span>
         <span class="tanda-meta" id="tanda-meta-${tanda.id}">
@@ -271,10 +262,23 @@ function _tandaHTML(tanda) {
             <polyline points="9 18 15 12 9 6"/>
           </svg>
         </span>
+        ${btnEliminar}
       </div>
       <div class="tanda-body${expandida ? '' : ' tanda-body--collapsed'}" id="tanda-body-${tanda.id}">${bodyHTML}</div>
     </div>
   `;
+}
+
+// Botón ✕ para eliminar una tanda vacía. stopPropagation evita que en las
+// tandas colapsables el toque además dispare el toggle del encabezado.
+function _btnEliminarTandaHTML(tanda) {
+  return `<button class="btn-del-tanda" id="btn-del-tanda-${tanda.id}"
+      title="Eliminar tanda vacía" aria-label="Eliminar tanda ${tanda.numero}"
+      onclick="event.stopPropagation();pedirConfirmEliminarTanda(${tanda.id},${tanda.numero})">
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>`;
 }
 
 function _vacaRowHTML(reg) {
@@ -424,6 +428,9 @@ function _insertarVacaRow(tandaId, reg, body) {
   _actualizarMetaTanda(tandaId, true);
   const grupo = body.closest('.tanda-group');
   if (grupo) grupo.classList.remove('tanda-group--vacia');
+  // Ya no está vacía: quitar el botón de eliminar tanda
+  const btnDel = document.getElementById('btn-del-tanda-' + tandaId);
+  if (btnDel) btnDel.remove();
 }
 
 function _actualizarMetaTanda(tandaId, esActiva) {
@@ -579,24 +586,7 @@ function _ensureConfirmSheet() {
   document.body.appendChild(div);
 }
 
-// ─── Long-press + confirm eliminar tanda ─────────────────────────────────────
-
-function _iniciarLongPressTanda(event, tandaId) {
-  _cancelarLongPressTanda();
-  _longPressTimer = setTimeout(() => {
-    _longPressTimer = null;
-    const tanda = R.allTandas.find(t => t.id === tandaId);
-    if (!tanda) return;
-    pedirConfirmEliminarTanda(tandaId, tanda.numero);
-  }, 3000);
-}
-
-function _cancelarLongPressTanda() {
-  if (_longPressTimer) {
-    clearTimeout(_longPressTimer);
-    _longPressTimer = null;
-  }
-}
+// ─── Confirm eliminar tanda ──────────────────────────────────────────────────
 
 function pedirConfirmEliminarTanda(tandaId, numero) {
   _pendingEliminarTandaId = tandaId;
