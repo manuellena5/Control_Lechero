@@ -15,6 +15,30 @@ function fmtL(n) {
   return n % 1 === 0 ? String(n) : n.toFixed(1);
 }
 
+// ─── Persistencia del almacenamiento ─────────────────────────────────────────
+
+// Safari borra IndexedDB tras ~7 días sin usar el sitio. Pedir almacenamiento
+// persistente exime a la app de esa limpieza automática. En iOS se concede
+// principalmente cuando la app está instalada en la pantalla de inicio.
+async function solicitarPersistencia() {
+  try {
+    if (!navigator.storage?.persist) return null;   // no soportado
+    if (await navigator.storage.persisted()) return true;
+    return await navigator.storage.persist();
+  } catch (_) {
+    return null;
+  }
+}
+
+async function estadoPersistencia() {
+  try {
+    if (!navigator.storage?.persisted) return null;
+    return await navigator.storage.persisted();
+  } catch (_) {
+    return null;
+  }
+}
+
 // Convierte lo tipeado en el campo de litros a número.
 // Acepta coma o punto como separador decimal (el teclado de iOS en configuración
 // regional argentina muestra coma, y "15,5" con parseFloat daría 15).

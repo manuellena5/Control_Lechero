@@ -1,13 +1,33 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.35'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.36'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   await seedTagsIfEmpty();
   const [vet, tambos, tags] = await Promise.all([getVeterinario(), getTambos(), getTags()]);
   el.innerHTML = _configHTML(vet || {}, tambos, tags);
   updateSyncBadges();
+  _mostrarEstadoPersistencia();
 });
+
+// Indica si el navegador se comprometió a no borrar los datos por inactividad.
+async function _mostrarEstadoPersistencia() {
+  const el = document.getElementById('persist-estado');
+  if (!el) return;
+  let ok = await estadoPersistencia();
+  if (ok === false) ok = await solicitarPersistencia();   // reintentar
+
+  if (ok === true) {
+    el.textContent = '✓ Sí';
+    el.style.color = 'var(--accent)';
+  } else if (ok === false) {
+    el.textContent = '⚠️ No — instalá la app';
+    el.style.color = 'var(--pending)';
+    el.title = 'Agregá la app a la pantalla de inicio para que el navegador no borre los datos por falta de uso.';
+  } else {
+    el.textContent = '—';
+  }
+}
 
 // ─── HTML ─────────────────────────────────────────────────────────────────────
 
@@ -142,6 +162,10 @@ function _configHTML(vet, tambos, tags) {
       <!-- Backup -->
       <div class="card">
         <h3 class="card-title">Copia de seguridad</h3>
+        <div class="config-sync-row" style="margin-bottom:12px">
+          <span class="text3">Datos protegidos</span>
+          <span id="persist-estado" class="text3">…</span>
+        </div>
         <div class="config-backup-btns">
           <button class="btn btn-secondary btn-full" onclick="exportarBackup()">
             Exportar datos (JSON)
@@ -471,13 +495,31 @@ async function exportarBackup() {
     veterinario, tambos, vacas_registro: vacas, controles, tandas, registros,
   };
 
-  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const texto  = JSON.stringify(backup, null, 2);
+  const nombre = `control-lechero-backup-${fechaHoy()}.json`;
+
+  // En iOS el truco de <a download> no funciona bien (sobre todo con la app
+  // instalada en la pantalla de inicio): puede abrir el JSON en pantalla o no
+  // hacer nada. Si el dispositivo tiene menú de compartir, lo usamos para que
+  // el archivo se pueda guardar en Archivos, iCloud, mail, WhatsApp, etc.
+  try {
+    const file = new File([texto], nombre, { type: 'application/json' });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Backup Control Lechero' });
+      return;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return;  // el usuario canceló
+    // cualquier otro error: seguimos con la descarga clásica
+  }
+
+  const blob = new Blob([texto], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `control-lechero-backup-${fechaHoy()}.json`;
+  a.download = nombre;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 // ─── Backup import ────────────────────────────────────────────────────────────

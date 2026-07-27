@@ -166,10 +166,16 @@ function _ayudaHTML() {
       ${_ayItem(_ayIcon.backup, '10. Copia de seguridad (archivo)', `
         <p>Es un respaldo total en un archivo, aparte de Google. En <strong>Config → Copia de seguridad</strong>:</p>
         <ul class="ay-list">
-          <li><strong>Exportar</strong>: descarga un archivo con TODOS tus datos. Guardalo en un lugar seguro.</li>
+          <li><strong>Exportar</strong>: genera un archivo con TODOS tus datos. En el celular te va a
+          ofrecer dónde guardarlo (Archivos, mail, WhatsApp). Guardalo en un lugar seguro.</li>
           <li><strong>Importar</strong>: carga ese archivo de vuelta. ⚠️ Ojo: <strong>reemplaza todo</strong>
           lo que tengas en la app, así que exportá antes por las dudas.</li>
         </ul>
+        <p>Ahí mismo vas a ver <strong>“Datos protegidos”</strong>. Si dice <strong>Sí</strong>, el celular
+        no va a borrar tus datos por falta de uso.</p>
+        <div class="ay-tip">💡 Importante en iPhone: usá la app desde el ícono de la pantalla de inicio
+        (no desde el navegador). Si la usás desde Safari y pasás muchos días sin abrirla, el teléfono
+        puede borrar los datos guardados. Sincronizar seguido con Sheets es la mejor red de seguridad.</div>
       `)}
 
       ${_ayItem(_ayIcon.update, '11. Actualizar la app', `
