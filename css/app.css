@@ -50,6 +50,10 @@ html, body {
   max-width: 430px;
   margin: 0 auto;
   position: relative;
+  /* Respetar las áreas seguras de iOS (notch / Dynamic Island y barra de inicio).
+     box-sizing:border-box (global) mantiene la altura total en 100dvh. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 #app-content {
@@ -63,7 +67,9 @@ html, body {
 
 #bottom-nav {
   position: fixed;
-  bottom: 0;
+  /* #app ya reserva la barra de inicio con su padding-bottom, así que la nav
+     se apoya justo por encima de esa área segura. */
+  bottom: env(safe-area-inset-bottom);
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
@@ -74,7 +80,6 @@ html, body {
   display: flex;
   align-items: stretch;
   z-index: 100;
-  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .nav-item {
