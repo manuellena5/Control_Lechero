@@ -1129,6 +1129,14 @@ h3 { font-size: 15px; font-weight: 600; }
 @media print {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
+  /* La app fija html/body al alto de la pantalla; al imprimir tienen que
+     poder crecer, si no el navegador manda una sola hoja (a veces en blanco). */
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
   /* Ocultar toda la app (y lo que cuelga del body: toasts, hojas, modales) */
   #app { display: none !important; }
   #sync-toast, .bs-overlay, .update-modal { display: none !important; }

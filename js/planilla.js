@@ -520,12 +520,15 @@ function generarPDF() {
   const [y, m, d] = control.fecha.split('-');
   const docTitle  = `Control Lechero — ${tambo.nombre} — ${d}/${m}/${y}`;
 
-  // Con la app instalada en la pantalla de inicio, iOS abre las ventanas nuevas
-  // SIN barra de navegación: el usuario quedaría sin forma de volver. En ese
-  // caso imprimimos desde la misma pantalla, sin abrir nada.
+  // Solo en iPhone/iPad instalado en la pantalla de inicio: ahí la ventana
+  // nueva se abre SIN barra de navegación y el usuario queda sin forma de
+  // volver, así que imprimimos desde la misma pantalla. En Android y en la
+  // computadora la ventana nueva funciona bien y tiene su botón "Volver".
+  const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+             || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const instalada = window.matchMedia?.('(display-mode: standalone)').matches
                  || navigator.standalone === true;
-  if (instalada) {
+  if (esIOS && instalada) {
     _imprimirEnPagina(pagesHtml);
     return;
   }
