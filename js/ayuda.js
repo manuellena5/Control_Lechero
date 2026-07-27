@@ -136,7 +136,9 @@ function _ayudaHTML() {
         <ul class="ay-list">
           <li>${_ayIcon.wa} <strong>Compartir por WhatsApp</strong> como imagen o como texto (se manda
           al teléfono del tambo que cargaste).</li>
-          <li>${_ayIcon.print} <strong>Imprimir</strong> o guardar en PDF.</li>
+          <li>📤 <strong>Descargar / Compartir PDF</strong>: arma el PDF y abre el menú del celular
+          para mandarlo por WhatsApp, mail, o guardarlo en el teléfono.</li>
+          <li>${_ayIcon.print} <strong>Imprimir</strong>: manda la planilla a una impresora.</li>
         </ul>
         <p>Tu nombre, matrícula y teléfono aparecen al pie de la planilla.</p>
       `)}

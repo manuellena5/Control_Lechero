@@ -1,11 +1,11 @@
 /* sw.js — Service Worker offline-first */
 
-const CACHE = 'control-lechero-v44';
+const CACHE = 'control-lechero-v45';
 
-// html2canvas.min.js (~195 KB) no forma parte del app shell:
-// solo se usa para compartir imagen por WhatsApp y tiene fallback a texto.
-// Se excluye del precacheo para acelerar la instalación del SW.
-// El fetch handler lo cachea automáticamente en el primer uso.
+// html2canvas.min.js (~195 KB) y jspdf.umd.min.js (~410 KB) no forman parte
+// del app shell: solo se usan para compartir imagen/PDF y tienen alternativa.
+// Se excluyen del precacheo para acelerar la instalación del SW.
+// El fetch handler los cachea automáticamente en el primer uso.
 const ASSETS = [
   './',
   './index.html',

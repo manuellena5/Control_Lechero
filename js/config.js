@@ -1,6 +1,6 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.44'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.45'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   await seedTagsIfEmpty();

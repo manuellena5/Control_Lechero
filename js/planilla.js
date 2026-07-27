@@ -230,8 +230,11 @@ function _planillaHTML() {
           <button class="btn btn-primary btn-full btn-lg" onclick="compartirWhatsApp()">
             📱 Compartir por WhatsApp
           </button>
+          <button class="btn btn-secondary btn-full" id="btn-pdf-share" onclick="descargarCompartirPDF()">
+            📤 Descargar / Compartir PDF
+          </button>
           <button class="btn btn-secondary btn-full" id="btn-pdf" onclick="generarPDF()">
-            📄 Generar PDF
+            🖨 Imprimir
           </button>
           <button class="btn btn-secondary btn-full" onclick="sincronizarSheets()">
             ☁️ Sincronizar con Sheets
@@ -501,6 +504,136 @@ function _compartirTexto() {
   const texto = encodeURIComponent(lineas.join('\n'));
   const tel   = tambo.telefono ? tambo.telefono.replace(/\D/g, '') : '';
   window.open(`https://wa.me/${tel}?text=${texto}`, '_blank');
+}
+
+// ─── PDF como archivo (descargar / compartir) ────────────────────────────────
+
+// jsPDF pesa ~400 KB: se descarga recién cuando se usa por primera vez y el
+// Service Worker lo deja cacheado para los usos siguientes (también offline).
+function _cargarJsPDF() {
+  if (window.jspdf?.jsPDF) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = './js/jspdf.umd.min.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('No se pudo cargar el generador de PDF.'));
+    document.head.appendChild(s);
+  });
+}
+
+async function descargarCompartirPDF() {
+  const { tambo, vet, control, vacas, stats } = _pd;
+  const FILAS_COL = 40;
+  const POR_PAG   = FILAS_COL * 2;
+  const totalPags = Math.max(1, Math.ceil(vacas.length / POR_PAG));
+
+  const btn = document.getElementById('btn-pdf-share');
+  const setBtn = txt => { if (btn) btn.textContent = txt; };
+  if (btn) btn.disabled = true;
+
+  // Si ya se generó y quedó esperando, este toque comparte (igual que las imágenes)
+  if (_pd.pendingPdfFile) { await _enviarPDF(); return; }
+
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;';
+  document.body.appendChild(container);
+
+  const t0 = Date.now();
+  try {
+    setBtn('⏳ Preparando…');
+    await _cargarJsPDF();
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const MARGEN = 8;
+    const anchoUtil = 210 - MARGEN * 2;
+
+    for (let p = 0; p < totalPags; p++) {
+      setBtn(totalPags > 1 ? `⏳ Hoja ${p + 1} de ${totalPags}…` : '⏳ Generando PDF…');
+      await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+
+      const startIdx  = p * POR_PAG;
+      const pageVacas = vacas.slice(startIdx, startIdx + POR_PAG);
+      container.innerHTML = _buildPagHTML(tambo, vet, control, pageVacas, startIdx, p + 1, totalPags, stats);
+
+      let canvas = await html2canvas(container.firstElementChild, {
+        backgroundColor: '#ffffff',
+        scale: totalPags >= 3 ? 1.5 : 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      // JPEG con buena calidad: mantiene el archivo liviano para WhatsApp
+      const img = canvas.toDataURL('image/jpeg', 0.92);
+      const alto = (canvas.height / canvas.width) * anchoUtil;
+
+      if (p > 0) pdf.addPage();
+      pdf.addImage(img, 'JPEG', MARGEN, MARGEN, anchoUtil, alto);
+
+      canvas.width = 0; canvas.height = 0; canvas = null;
+      container.innerHTML = '';
+    }
+
+    const nombre = `control-${tambo.nombre}-${control.fecha}.pdf`.replace(/\s+/g, '-');
+    const blob   = pdf.output('blob');
+    _pd.pendingPdfFile = new File([blob], nombre, { type: 'application/pdf' });
+
+    // Igual que con las imágenes: si tardó, iOS ya invalidó el permiso de
+    // compartir y hace falta un segundo toque del usuario.
+    if (Date.now() - t0 > 1500) {
+      if (btn) { btn.disabled = false; btn.classList.add('btn-share-listo'); }
+      setBtn('📤 Enviar PDF');
+      return;
+    }
+    await _enviarPDF();
+
+  } catch (err) {
+    _pd.pendingPdfFile = null;
+    _showToast('No se pudo generar el PDF: ' + err.message);
+    if (btn) { btn.textContent = '📤 Descargar / Compartir PDF'; btn.disabled = false; }
+  } finally {
+    if (container.parentNode) document.body.removeChild(container);
+  }
+}
+
+async function _enviarPDF() {
+  const file = _pd.pendingPdfFile;
+  if (!file) return;
+  const btn = document.getElementById('btn-pdf-share');
+
+  try {
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: `Control Lechero — ${_pd.tambo.nombre}` });
+      _resetBotonPDF();
+      return;
+    }
+    // Sin menú de compartir (escritorio): descarga directa
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    _resetBotonPDF();
+  } catch (err) {
+    // El usuario cerró el menú: dejamos el PDF listo para reintentar
+    if (err.name !== 'AbortError') {
+      _showToast('No se pudo compartir: ' + err.message);
+      _resetBotonPDF();
+    } else if (btn) {
+      btn.disabled = false;
+    }
+  }
+}
+
+function _resetBotonPDF() {
+  _pd.pendingPdfFile = null;
+  const btn = document.getElementById('btn-pdf-share');
+  if (btn) {
+    btn.textContent = '📤 Descargar / Compartir PDF';
+    btn.disabled = false;
+    btn.classList.remove('btn-share-listo');
+  }
 }
 
 function generarPDF() {
