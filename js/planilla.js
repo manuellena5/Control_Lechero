@@ -520,6 +520,16 @@ function generarPDF() {
   const [y, m, d] = control.fecha.split('-');
   const docTitle  = `Control Lechero — ${tambo.nombre} — ${d}/${m}/${y}`;
 
+  // Con la app instalada en la pantalla de inicio, iOS abre las ventanas nuevas
+  // SIN barra de navegación: el usuario quedaría sin forma de volver. En ese
+  // caso imprimimos desde la misma pantalla, sin abrir nada.
+  const instalada = window.matchMedia?.('(display-mode: standalone)').matches
+                 || navigator.standalone === true;
+  if (instalada) {
+    _imprimirEnPagina(pagesHtml);
+    return;
+  }
+
   // Abrir nueva ventana de forma sincrónica (gesto de usuario activo).
   // Esto evita todos los problemas de timing de @media print en mobile.
   const printWin = window.open('', '_blank');
@@ -541,32 +551,97 @@ function generarPDF() {
   URL.revokeObjectURL(url);
 }
 
+// Imprime sin abrir ventana nueva: monta las hojas en un contenedor oculto que
+// las reglas @media print de app.css muestran (ocultando el resto de la app).
+function _imprimirEnPagina(pagesHtml) {
+  document.getElementById('print-layout')?.remove();
+
+  const cont = document.createElement('div');
+  cont.id = 'print-layout';
+  cont.innerHTML = pagesHtml;
+  document.body.appendChild(cont);
+
+  const limpiar = () => {
+    document.getElementById('print-layout')?.remove();
+    window.removeEventListener('afterprint', limpiar);
+  };
+  window.addEventListener('afterprint', limpiar);
+  // Red de seguridad: si el navegador no dispara afterprint, limpiar igual
+  setTimeout(limpiar, 60000);
+
+  // Dejar que el navegador pinte el contenedor antes de abrir el diálogo
+  requestAnimationFrame(() => setTimeout(() => window.print(), 100));
+}
+
 function _buildPrintDoc(title, pagesHtml) {
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <title>${title}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #fff; }
   .print-pag { display: flex; justify-content: center; page-break-after: always; break-after: page; }
   .print-pag:last-child { page-break-after: auto; break-after: auto; }
+
+  /* Barra propia: en iOS con la app instalada esta ventana se abre SIN barra
+     de navegación, así que sin estos botones el usuario queda sin salida. */
+  .pdf-bar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; gap: 10px; align-items: center;
+    padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+    background: #2D6A4F; color: #fff;
+  }
+  .pdf-bar button {
+    font-family: inherit; font-size: 14px; font-weight: 600;
+    padding: 10px 14px; min-height: 42px;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: rgba(255,255,255,.16); color: #fff;
+  }
+  .pdf-bar .pdf-print { background: #fff; color: #2D6A4F; margin-left: auto; }
+  .pdf-hint {
+    display: none; padding: 10px 14px; margin: 10px 12px 0;
+    background: #FFF8DC; color: #6B5A0A; font-size: 13px; border-radius: 8px;
+  }
+
   @media screen {
-    body { padding: 12px; }
     .print-pag { overflow-x: auto; margin-bottom: 24px; }
+    .pdf-body { padding: 12px; }
   }
   @media print {
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { padding: 0; }
+    .pdf-bar, .pdf-hint { display: none !important; }
+    .pdf-body { padding: 0; }
     @page { size: A4 portrait; margin: 10mm; }
   }
 </style>
 </head>
 <body>
+<div class="pdf-bar">
+  <button type="button" onclick="volver()">← Volver</button>
+  <button type="button" class="pdf-print" onclick="window.print()">🖨 Imprimir / PDF</button>
+</div>
+<div class="pdf-hint" id="hint">
+  Para volver a la app, cerrá esta pestaña desde el navegador.
+</div>
+<div class="pdf-body">
 ${pagesHtml}
+</div>
 <script>
+  function volver() {
+    window.close();
+    // Si el navegador no permite cerrarla (pasa en iOS), intentamos volver
+    // atrás y, si tampoco se puede, mostramos la ayuda.
+    setTimeout(function () {
+      if (!window.closed) {
+        if (history.length > 1) { history.back(); return; }
+        document.getElementById('hint').style.display = 'block';
+      }
+    }, 300);
+  }
   window.addEventListener('load', function () {
     setTimeout(function () { window.print(); }, 400);
   });

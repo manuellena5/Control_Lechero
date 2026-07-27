@@ -1127,8 +1127,9 @@ h3 { font-size: 15px; font-weight: 600; }
 @media print {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  /* Ocultar toda la app */
+  /* Ocultar toda la app (y lo que cuelga del body: toasts, hojas, modales) */
   #app { display: none !important; }
+  #sync-toast, .bs-overlay, .update-modal { display: none !important; }
 
   /* Traer el layout de impresión a posición normal */
   #print-layout {
