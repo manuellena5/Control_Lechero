@@ -799,10 +799,11 @@ function verVacaDuplicada() {
 
 // ─── Teclado en pantalla ─────────────────────────────────────────────────────
 
-// En iOS el teclado NO achica la ventana, así que un elemento anclado al fondo
-// (como el bottom sheet) queda tapado. visualViewport sí refleja el área que
-// realmente ve el usuario: con eso calculamos la altura del teclado y la
-// publicamos como --kb-height para que el CSS levante la hoja.
+// Los modales se anclan al ÁREA REALMENTE VISIBLE, no a la ventana. Calcular
+// "cuánto mide el teclado" no es confiable: cada navegador achica (o no) la
+// ventana de forma distinta. En cambio visualViewport siempre describe lo que
+// el usuario ve, así que publicamos su posición y alto y el CSS calza el modal
+// justo ahí. Con el teclado abierto, el modal queda por encima de él.
 let _kbWatcherOn = false;
 
 function _initTecladoWatcher() {
@@ -811,18 +812,19 @@ function _initTecladoWatcher() {
   if (!vv) return;                       // navegador viejo: queda como antes
   _kbWatcherOn = true;
 
+  const raiz = document.documentElement;
   const aplicar = () => {
-    const alto = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    // Umbral chico para ignorar barras del navegador que aparecen y desaparecen
-    const kb = alto > 100 ? alto : 0;
-    const raiz = document.documentElement;
-    raiz.style.setProperty('--kb-height', kb + 'px');
-    // Con el teclado abierto, la barra de inicio queda cubierta por el teclado
-    raiz.style.setProperty('--sheet-safe-bottom', kb > 0 ? '0px' : '');
+    raiz.style.setProperty('--vv-top',    vv.offsetTop + 'px');
+    raiz.style.setProperty('--vv-height', vv.height + 'px');
+    // Si el área visible es más chica que la ventana, hay teclado abierto:
+    // la barra de inicio queda tapada por él y no hace falta reservarla.
+    const hayTeclado = (window.innerHeight - vv.height) > 100;
+    raiz.style.setProperty('--sheet-safe-bottom', hayTeclado ? '0px' : '');
   };
 
   vv.addEventListener('resize', aplicar);
   vv.addEventListener('scroll', aplicar);
+  window.addEventListener('orientationchange', () => setTimeout(aplicar, 200));
   aplicar();
 }
 

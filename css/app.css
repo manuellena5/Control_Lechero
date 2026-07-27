@@ -916,15 +916,17 @@ h3 { font-size: 15px; font-weight: 600; }
 
 .bs-overlay {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  /* Calza exactamente el área visible (lo que no tapa el teclado). El JS
+     publica --vv-top y --vv-height desde visualViewport; sin teclado
+     equivalen a la pantalla completa. */
+  top: var(--vv-top, 0px);
+  height: var(--vv-height, 100%);
   background: rgba(0,0,0,.4);
   z-index: 200;
   display: flex;
   align-items: flex-end;
-  /* Levanta la hoja por encima del teclado (--kb-height la publica el JS).
-     Sin teclado vale 0 y todo queda igual que antes. */
-  padding-bottom: var(--kb-height, 0px);
-  transition: padding-bottom .18s ease-out;
 }
 .bs-overlay.hidden { display: none; }
 
