@@ -125,8 +125,9 @@ function _renderFull() {
           </div>
           <button id="btn-rp-mode" class="btn-rp-mode${R.rpAlfanumerico ? ' active' : ''}"
             onclick="toggleRpMode()" title="Cambiar tipo de teclado">${rpModeLabel}</button>
-          <input id="inp-litros" class="inp-litros" type="number" inputmode="decimal"
-            step="0.5" min="0" placeholder="Litros" enterkeyhint="done">
+          <input id="inp-litros" class="inp-litros" type="text" inputmode="decimal"
+            placeholder="Litros" enterkeyhint="done" autocomplete="off"
+            oninput="_filtrarLitros(this)">
           <button class="btn-agregar" onclick="agregarVaca()">+</button>
         </div>
         <div class="chips-row" id="chips-row">${_chipsHTML()}</div>
@@ -384,7 +385,7 @@ async function agregarVaca() {
   }
   R.ultimoRpWarning = null; // Confirmado (segundo press) o RP nuevo
 
-  const litros = litrosInp.value !== '' ? parseFloat(litrosInp.value) : null;
+  const litros = parseLitros(litrosInp.value);
   const tags = [...R.tagsSel];
 
   // Crear tanda si no hay ninguna para este turno
@@ -709,8 +710,8 @@ function _ensureBottomSheet() {
         <p id="bs-subtitle" class="text3"></p>
       </div>
       <div class="bs-body">
-        <input id="bs-litros" type="number" inputmode="decimal" step="0.5" min="0"
-               class="bs-litros-input" placeholder="Litros">
+        <input id="bs-litros" type="text" inputmode="decimal" autocomplete="off"
+               class="bs-litros-input" placeholder="Litros" oninput="_filtrarLitros(this)">
         <div class="chips-row chips-row--centered" id="bs-chips"></div>
       </div>
       <div class="bs-actions">
@@ -778,8 +779,7 @@ function bsToggleChip(name) {
 
 async function guardarEdicion() {
   if (!R.editRegId) return;
-  const litrosVal = document.getElementById('bs-litros').value;
-  const litros = litrosVal !== '' ? parseFloat(litrosVal) : null;
+  const litros = parseLitros(document.getElementById('bs-litros').value);
   const tags = [...R.bsTags];
 
   const reg = await updateRegistro(R.editRegId, litros, tags);
@@ -798,6 +798,18 @@ async function guardarEdicion() {
 function _fmtL(n) {
   if (n == null) return '0';
   return n % 1 === 0 ? String(n) : n.toFixed(1);
+}
+
+// Los campos de litros son type="text" (para que iOS no descarte la coma del
+// teclado decimal). Este filtro deja solo dígitos y un separador decimal.
+function _filtrarLitros(inp) {
+  let v = inp.value.replace(/[^0-9.,]/g, '');
+  // Un solo separador: conservar el primero
+  const i = v.search(/[.,]/);
+  if (i !== -1) {
+    v = v.slice(0, i + 1) + v.slice(i + 1).replace(/[.,]/g, '');
+  }
+  if (v !== inp.value) inp.value = v;
 }
 
 function _cap(str) {

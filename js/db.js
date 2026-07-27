@@ -15,6 +15,18 @@ function fmtL(n) {
   return n % 1 === 0 ? String(n) : n.toFixed(1);
 }
 
+// Convierte lo tipeado en el campo de litros a número.
+// Acepta coma o punto como separador decimal (el teclado de iOS en configuración
+// regional argentina muestra coma, y "15,5" con parseFloat daría 15).
+function parseLitros(val) {
+  if (val == null) return null;
+  const s = String(val).trim().replace(',', '.');
+  if (s === '') return null;
+  const n = parseFloat(s);
+  if (!isFinite(n) || n < 0) return null;
+  return n;
+}
+
 function _hexToRgba(hex, a) {
   const h = (hex || '#888888').replace('#', '');
   const r = parseInt(h.slice(0, 2), 16);

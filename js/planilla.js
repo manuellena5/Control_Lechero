@@ -245,6 +245,10 @@ function _planillaHTML() {
 // ─── Acciones ─────────────────────────────────────────────────────────────────
 
 async function compartirWhatsApp() {
+  // Si ya hay imágenes generadas esperando (ver _mostrarBotonCompartirListo),
+  // este toque es el que abre el menú de compartir.
+  if (_pd.pendingShareFiles) { await enviarImagenesListas(); return; }
+
   // Intentar compartir como imagen si el browser lo soporta
   const testFile = new File([''], 'test.png', { type: 'image/png' });
   const puedeImagen = typeof html2canvas !== 'undefined' &&
@@ -255,6 +259,44 @@ async function compartirWhatsApp() {
     await _compartirImagen();
   } else {
     _compartirTexto();
+  }
+}
+
+// Las imágenes ya están listas; el botón pasa a pedir un toque para compartir.
+// Esto satisface la exigencia de iOS de que share() nazca de un gesto reciente.
+function _mostrarBotonCompartirListo(cant) {
+  const btn = document.querySelector('.pl-actions button');
+  if (!btn) return;
+  btn.disabled = false;
+  btn.textContent = cant > 1
+    ? `📤 Enviar ${cant} hojas por WhatsApp`
+    : '📤 Enviar por WhatsApp';
+  btn.classList.add('btn-share-listo');
+}
+
+async function enviarImagenesListas() {
+  const files = _pd.pendingShareFiles;
+  if (!files) return;
+  const btn = document.querySelector('.pl-actions button');
+  try {
+    await navigator.share({ files, title: `Control Lechero — ${_pd.tambo.nombre}` });
+    _resetBotonCompartir();
+  } catch (err) {
+    // AbortError = el usuario cerró el menú: dejamos el botón listo para reintentar
+    if (err.name !== 'AbortError') {
+      _resetBotonCompartir();
+      _compartirTexto();
+    }
+  }
+}
+
+function _resetBotonCompartir() {
+  _pd.pendingShareFiles = null;
+  const btn = document.querySelector('.pl-actions button');
+  if (btn) {
+    btn.textContent = '📱 Compartir por WhatsApp';
+    btn.disabled = false;
+    btn.classList.remove('btn-share-listo');
   }
 }
 
@@ -278,9 +320,10 @@ async function _compartirImagen() {
   container.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;';
   document.body.appendChild(container);
 
-  try {
-    const files = [];
+  const t0 = Date.now();
+  const files = [];
 
+  try {
     for (let p = 0; p < totalPags; p++) {
       if (totalPags > 1) setBtn(`⏳ Generando hoja ${p + 1} de ${totalPags}…`);
       // Ceder un frame: deja que el navegador pinte el progreso y recicle memoria
@@ -311,14 +354,33 @@ async function _compartirImagen() {
       container.innerHTML = '';
     }
 
+    // iOS exige que navigator.share() se dispare dentro del gesto del usuario.
+    // Generar las imágenes puede tardar varios segundos y ese permiso vence, así
+    // que si tardamos mucho pedimos un segundo toque en vez de fallar.
+    const tardo = Date.now() - t0;
+    if (tardo > 1500) {
+      _pd.pendingShareFiles = files;
+      _mostrarBotonCompartirListo(files.length);
+      return;
+    }
+
     setBtn('⏳ Abriendo para compartir…');
     await navigator.share({ files, title: `Control Lechero — ${tambo.nombre}` });
 
   } catch (err) {
-    if (err.name !== 'AbortError') _compartirTexto();
+    if (err.name === 'AbortError') {
+      // El usuario cerró el menú de compartir: no hacer nada
+    } else if (err.name === 'NotAllowedError' && files.length) {
+      // Permiso de gesto vencido → ofrecer el segundo toque
+      _pd.pendingShareFiles = files;
+      _mostrarBotonCompartirListo(files.length);
+      return;
+    } else {
+      _compartirTexto();
+    }
   } finally {
     if (container.parentNode) document.body.removeChild(container);
-    if (btn) { btn.textContent = '📱 Compartir por WhatsApp'; btn.disabled = false; }
+    if (btn && !_pd.pendingShareFiles) { btn.textContent = '📱 Compartir por WhatsApp'; btn.disabled = false; }
   }
 }
 

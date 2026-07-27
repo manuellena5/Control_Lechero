@@ -1042,6 +1042,15 @@ h3 { font-size: 15px; font-weight: 600; }
   padding-bottom: 16px;
 }
 
+/* Imágenes ya generadas, esperando el toque que abre el menú de compartir */
+.btn-share-listo {
+  animation: pulseShare 1.6s ease-in-out infinite;
+}
+@keyframes pulseShare {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.02); }
+}
+
 /* ── Print ────────────────────────────────────────────────────────────────── */
 
 .print-only { display: none; }
