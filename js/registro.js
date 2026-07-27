@@ -60,6 +60,7 @@ registerScreen('registro', async (el, params) => {
   _ensureBottomSheet();
   _ensureConfirmSheet();
   _ensureConfirmTandaSheet();
+  _initTecladoWatcher();
 });
 
 // ─── Carga de datos ───────────────────────────────────────────────────────────
@@ -716,6 +717,35 @@ function _attachEntradaListeners() {
   });
 }
 
+// ─── Teclado en pantalla ─────────────────────────────────────────────────────
+
+// En iOS el teclado NO achica la ventana, así que un elemento anclado al fondo
+// (como el bottom sheet) queda tapado. visualViewport sí refleja el área que
+// realmente ve el usuario: con eso calculamos la altura del teclado y la
+// publicamos como --kb-height para que el CSS levante la hoja.
+let _kbWatcherOn = false;
+
+function _initTecladoWatcher() {
+  if (_kbWatcherOn) return;
+  const vv = window.visualViewport;
+  if (!vv) return;                       // navegador viejo: queda como antes
+  _kbWatcherOn = true;
+
+  const aplicar = () => {
+    const alto = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    // Umbral chico para ignorar barras del navegador que aparecen y desaparecen
+    const kb = alto > 100 ? alto : 0;
+    const raiz = document.documentElement;
+    raiz.style.setProperty('--kb-height', kb + 'px');
+    // Con el teclado abierto, la barra de inicio queda cubierta por el teclado
+    raiz.style.setProperty('--sheet-safe-bottom', kb > 0 ? '0px' : '');
+  };
+
+  vv.addEventListener('resize', aplicar);
+  vv.addEventListener('scroll', aplicar);
+  aplicar();
+}
+
 // ─── Bottom sheet — edición de vaca ──────────────────────────────────────────
 
 function _ensureBottomSheet() {
@@ -733,7 +763,9 @@ function _ensureBottomSheet() {
       </div>
       <div class="bs-body">
         <input id="bs-litros" type="text" inputmode="decimal" autocomplete="off"
-               class="bs-litros-input" placeholder="Litros" oninput="_filtrarLitros(this)">
+               enterkeyhint="done" class="bs-litros-input" placeholder="Litros"
+               oninput="_filtrarLitros(this)"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();guardarEdicion();}">
         <div class="chips-row chips-row--centered" id="bs-chips"></div>
       </div>
       <div class="bs-actions">

@@ -921,6 +921,10 @@ h3 { font-size: 15px; font-weight: 600; }
   z-index: 200;
   display: flex;
   align-items: flex-end;
+  /* Levanta la hoja por encima del teclado (--kb-height la publica el JS).
+     Sin teclado vale 0 y todo queda igual que antes. */
+  padding-bottom: var(--kb-height, 0px);
+  transition: padding-bottom .18s ease-out;
 }
 .bs-overlay.hidden { display: none; }
 
@@ -930,8 +934,14 @@ h3 { font-size: 15px; font-weight: 600; }
   margin: 0 auto;
   background: var(--surface);
   border-radius: 20px 20px 0 0;
-  padding: 0 0 env(safe-area-inset-bottom);
+  /* Con el teclado abierto no hace falta reservar la barra de inicio: el JS
+     pone --sheet-safe-bottom en 0 en ese caso. */
+  padding: 0 0 var(--sheet-safe-bottom, env(safe-area-inset-bottom));
   animation: slideUp .2s ease-out;
+  /* Si el teclado deja poco espacio, la hoja scrollea en vez de recortarse */
+  max-height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 @keyframes slideUp {
@@ -981,7 +991,11 @@ h3 { font-size: 15px; font-weight: 600; }
 .bs-actions {
   display: flex;
   gap: 10px;
-  padding: 0 20px 20px;
+  padding: 12px 20px 20px;
+  /* Siempre visibles, aunque la hoja tenga que scrollear con el teclado abierto */
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
 }
 .bs-actions .btn { flex: 1; }
 
