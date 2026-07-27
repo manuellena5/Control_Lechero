@@ -22,6 +22,9 @@ const FULLSCREEN = new Set(['registro', 'planilla']);
 // Handlers registrados por cada módulo de pantalla
 const _handlers = {};
 
+// Último hash renderizado (lo usa el control de "doble atrás para salir")
+let _hashAnterior = location.hash;
+
 function registerScreen(name, fn) {
   _handlers[name] = fn;
 }
@@ -71,6 +74,10 @@ async function _render(hash) {
 
   _updateBottomNav(screen);
 
+  // Mantener sincronizado el control de "doble atrás para salir"
+  _hashAnterior = location.hash;
+  if (_enInicio()) _ponerCentinela();
+
   if (_handlers[screen]) {
     await _handlers[screen](content, params);
   } else {
@@ -89,4 +96,51 @@ function refresh() {
 function initRouter() {
   window.addEventListener('hashchange', () => _render(location.hash));
   _render(location.hash);
+}
+
+// ─── Salir con doble "atrás" desde Inicio ────────────────────────────────────
+
+// En la pantalla de Inicio, el primer "atrás" avisa y el segundo (dentro de
+// 2 segundos) cierra la app. Se apoya en una entrada centinela del historial:
+// al consumirla, el hash no cambia, y así distinguimos "quiere salir" de una
+// navegación normal entre pantallas.
+
+let _salirArmado = false;
+
+function _enInicio() {
+  const h = location.hash;
+  return h === '' || h === '#' || h === '#/';
+}
+
+function _ponerCentinela() {
+  // Idempotente: si la entrada actual ya es el centinela, no apilar otro
+  if (history.state && history.state.centinela) return;
+  history.pushState({ centinela: true }, '');
+}
+
+function initSalirDobleAtras() {
+  if (_enInicio()) _ponerCentinela();
+
+  window.addEventListener('popstate', () => {
+    const cambioDeHash = location.hash !== _hashAnterior;
+    _hashAnterior = location.hash;
+
+    // Cambió la pantalla: es navegación normal, la maneja el router.
+    if (cambioDeHash) {
+      if (_enInicio()) _ponerCentinela();   // rearmar el centinela en Inicio
+      return;
+    }
+
+    if (!_enInicio()) return;
+
+    if (!_salirArmado) {
+      _salirArmado = true;
+      if (typeof _showToast === 'function') _showToast('Tocá atrás otra vez para salir');
+      setTimeout(() => { _salirArmado = false; }, 2000);
+      _ponerCentinela();          // seguimos dentro de la app
+    } else {
+      _salirArmado = false;
+      history.back();             // segunda vez seguida: dejamos salir
+    }
+  });
 }
