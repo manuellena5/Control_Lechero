@@ -751,6 +751,44 @@ h3 { font-size: 15px; font-weight: 600; }
 
 .tanda-vacia-hint em { color: var(--text3); font-style: normal; }
 
+/* Fila al pie de una tanda anterior para volver a cargar en ella */
+.tanda-add-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 11px 14px;
+  border: none;
+  border-top: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  min-height: 44px;
+  -webkit-tap-highlight-color: transparent;
+}
+.tanda-add-row:active {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.tanda-add-ico {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+}
+
+/* Indica en qué tanda se están cargando las vacas */
+.badge--cargando {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .tanda-chevron {
   flex-shrink: 0;
   transition: transform .2s;

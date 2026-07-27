@@ -229,7 +229,7 @@ function _tandaHTML(tanda) {
 
   const estaVacia = regsAll.length === 0;
 
-  const bodyHTML = displayRegs.length === 0
+  const filasHTML = displayRegs.length === 0
     ? `<p class="text3 tanda-vacia-hint" style="padding:8px 16px;font-size:13px">Tanda vacía</p>`
     : displayRegs.map(r => _vacaRowHTML(r)).join('');
 
@@ -241,16 +241,23 @@ function _tandaHTML(tanda) {
       <div class="tanda-group tanda-group--active${estaVacia ? ' tanda-group--vacia' : ''}">
         <div class="tanda-header">
           <span class="tanda-title">Tanda ${tanda.numero}</span>
+          <span class="badge badge--cargando">cargando acá</span>
           <span class="tanda-meta" id="tanda-meta-${tanda.id}">
             ${regsAll.length} vaca${regsAll.length !== 1 ? 's' : ''} · ${_fmtL(litros)} L
             ${pend > 0 ? `<span class="badge badge--pending"> ${pend} pend.</span>` : ''}
           </span>
           ${btnEliminar}
         </div>
-        <div class="tanda-body" id="tanda-body-${tanda.id}">${bodyHTML}</div>
+        <div class="tanda-body" id="tanda-body-${tanda.id}">${filasHTML}</div>
       </div>
     `;
   }
+
+  // Tandas anteriores: fila al pie para pasar a cargar en ellas
+  const filaAgregar = `
+    <button class="tanda-add-row" onclick="activarTanda(${tanda.id})">
+      <span class="tanda-add-ico">+</span> Agregar vacas en esta tanda
+    </button>`;
 
   return `
     <div class="tanda-group${estaVacia ? ' tanda-group--vacia' : ''}">
@@ -265,9 +272,24 @@ function _tandaHTML(tanda) {
         </span>
         ${btnEliminar}
       </div>
-      <div class="tanda-body${expandida ? '' : ' tanda-body--collapsed'}" id="tanda-body-${tanda.id}">${bodyHTML}</div>
+      <div class="tanda-body${expandida ? '' : ' tanda-body--collapsed'}" id="tanda-body-${tanda.id}">${filasHTML}${filaAgregar}</div>
     </div>
   `;
+}
+
+// Pasa a cargar vacas en una tanda anterior: la vuelve la tanda activa,
+// la expande y deja el foco en el campo RP listo para tipear.
+function activarTanda(tandaId) {
+  R.tandaActivaId = tandaId;
+  R.tandasExpandidas.add(tandaId);
+  _renderTandas();
+  const rp = document.getElementById('inp-rp');
+  if (rp) {
+    rp.focus();
+    rp.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  const tanda = R.allTandas.find(t => t.id === tandaId);
+  if (tanda) _showToast(`Cargando en Tanda ${tanda.numero}`);
 }
 
 // Botón ✕ para eliminar una tanda vacía. stopPropagation evita que en las
