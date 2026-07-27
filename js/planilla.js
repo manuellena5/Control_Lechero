@@ -132,7 +132,7 @@ function _planillaHTML() {
 
       <!-- Cabecera de navegación (no se imprime) -->
       <div class="page-header no-print">
-        <button class="btn btn-ghost btn-icon" onclick="history.back()">
+        <button class="btn btn-ghost btn-icon" onclick="navigateUp('/tambos/${_pd.tamboId}')">
           <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <h2>Planilla</h2>

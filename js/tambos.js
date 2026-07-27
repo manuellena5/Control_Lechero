@@ -72,9 +72,13 @@ registerScreen('tambo-form', async (el, params) => {
   const esEdicion = !!params.tamboId;
   const tambo = esEdicion ? await getTambo(Number(params.tamboId)) : null;
 
+  // Al salir del formulario: si es edición vuelve al detalle del tambo;
+  // si es alta, a la lista de tambos.
+  const volverA = esEdicion ? `/tambos/${tambo.id}` : '/tambos';
+
   el.innerHTML = `
     <div class="page-header">
-      <button class="btn btn-ghost btn-icon" onclick="history.back()">
+      <button class="btn btn-ghost btn-icon" onclick="navigateUp('${volverA}')">
         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"/>
         </svg>
@@ -115,7 +119,7 @@ registerScreen('tambo-form', async (el, params) => {
           <p class="form-helper">Activá si los RPs de este tambo contienen letras (ej: A123, VH45).</p>
         </div>
         <div class="form-actions">
-          <button type="button" class="btn btn-secondary" onclick="history.back()">Cancelar</button>
+          <button type="button" class="btn btn-secondary" onclick="navigateUp('${volverA}')">Cancelar</button>
           <button type="submit" class="btn btn-primary">${esEdicion ? 'Guardar cambios' : 'Crear tambo'}</button>
         </div>
       </form>
@@ -147,7 +151,7 @@ async function guardarTambo(event, id) {
   if (data.sheetId) {
     const count = await db.controles.where('tamboId').equals(tamboId).count();
     if (count === 0) {
-      navigate('/tambos/' + tamboId);
+      navigateUp('/tambos/' + tamboId);
       if (confirm(
         '¿Restaurar datos desde Google Sheets?\n\n' +
         'Este tambo tiene un Sheet vinculado. ' +
@@ -161,7 +165,7 @@ async function guardarTambo(event, id) {
     }
   }
 
-  navigate('/tambos/' + tamboId);
+  navigateUp('/tambos/' + tamboId);
 }
 
 // ─── Detalle del tambo ────────────────────────────────────────────────────────
@@ -183,7 +187,7 @@ registerScreen('tambo-detalle', async (el, params) => {
 
   el.innerHTML = `
     <div class="page-header">
-      <button class="btn btn-ghost btn-icon" onclick="navigate('/tambos')">
+      <button class="btn btn-ghost btn-icon" onclick="navigateUp('/tambos')">
         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"/>
         </svg>

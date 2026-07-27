@@ -113,7 +113,7 @@ function _renderFull() {
   R.el.innerHTML = `
     <div class="reg-wrap">
       <div class="reg-header">
-        <button class="btn btn-ghost btn-icon" onclick="navigate('/tambos/${R.tamboId}')">
+        <button class="btn btn-ghost btn-icon" onclick="navigateUp('/tambos/${R.tamboId}')">
           <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <div class="reg-header__info">

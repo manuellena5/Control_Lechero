@@ -30,6 +30,15 @@ function navigate(path) {
   location.hash = '#' + path;
 }
 
+// "Subir" a la pantalla padre. A diferencia de navigate(), reemplaza la entrada
+// actual del historial en vez de agregar una nueva: así volver no apila
+// pantallas y el botón atrás del teléfono sigue siendo coherente.
+function navigateUp(path) {
+  const nuevo = '#' + path;
+  if (location.hash === nuevo) { refresh(); return; }
+  location.replace(location.pathname + location.search + nuevo);
+}
+
 function _parsePath(hash) {
   const path = hash.replace(/^#/, '') || '/';
   for (const route of ROUTES) {

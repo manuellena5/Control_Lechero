@@ -1,6 +1,6 @@
 /* config.js — Pantalla de configuración */
 
-const APP_VERSION = '1.40'; // Actualizar junto con CACHE en sw.js
+const APP_VERSION = '1.41'; // Actualizar junto con CACHE en sw.js
 
 registerScreen('config', async (el) => {
   await seedTagsIfEmpty();
@@ -287,7 +287,7 @@ async function _buscarTambosEnScript(url) {
   }
 
   _showToast(`✓ ${nuevos.length} tambo${nuevos.length !== 1 ? 's' : ''} importado${nuevos.length !== 1 ? 's' : ''}`);
-  navigate('/config');
+  refresh();
 }
 
 // ─── Forzar sync ──────────────────────────────────────────────────────────────
@@ -358,7 +358,7 @@ async function forzarSync() {
         });
         await pullFromSheet(tamboId);
       }
-      navigate('/config');
+      refresh();
     }
   } else {
     _showToast('✓ Todo sincronizado. Sin tambos nuevos.');
@@ -572,5 +572,5 @@ async function importarBackup(e) {
   );
 
   alert('✅ Datos importados correctamente.');
-  navigate('/config');
+  refresh();
 }
